@@ -187,6 +187,52 @@ struct LadEngineTests {
         #expect(typist.doubleShift().convertsSelection)
     }
 
+    @Test("A word converts at Return, which is pressed again after the retyped word")
+    func convertsAtReturn() {
+        var typist = Typist(Fixture.typingInUS)
+        typist.type("ghbdsn", on: us)
+        let output = typist.pressReturn()
+        #expect(output.suppressesEvent)
+        #expect(output.replacement == Replacement(
+            deleteCount: 6, text: "привіт", layoutID: ua.id, followUpKey: KeyStroke(keyCode: KeyCode.returnKey)
+        ))
+        // The line may be sent already: there is nothing to undo.
+        #expect(typist.doubleShift().convertsSelection)
+    }
+
+    @Test("Shift+Return keeps its Shift, keypad Enter its key")
+    func keepsReturnModifiers() {
+        var shifted = Typist(Fixture.typingInUS)
+        shifted.type("ghbdsn", on: us)
+        #expect(shifted.pressReturn(.shift).replacement?.followUpKey == KeyStroke(keyCode: KeyCode.returnKey, shift: true))
+        var keypad = Typist(Fixture.typingInUS)
+        keypad.type("ghbdsn", on: us)
+        #expect(keypad.press(KeyCode.keypadEnter).replacement?.followUpKey == KeyStroke(keyCode: KeyCode.keypadEnter))
+    }
+
+    @Test("Return passes when the word fits, when switched off, or as a shortcut")
+    func passesReturn() {
+        var fitting = Typist(Fixture.typingInUS)
+        fitting.type("hello", on: us)
+        #expect(fitting.pressReturn() == .pass)
+        var off = Typist(Fixture.typingInUS)
+        off.engine.convertsOnReturn = false
+        off.type("ghbdsn", on: us)
+        #expect(off.pressReturn() == .pass)
+        var shortcut = Typist(Fixture.typingInUS)
+        shortcut.type("ghbdsn", on: us)
+        #expect(shortcut.pressReturn(.command) == .pass)
+    }
+
+    @Test("Pending words convert along at Return")
+    func convertsPendingAtReturn() {
+        var typist = Typist(Fixture.typingInUS)
+        typist.type("z [jxe", on: us)
+        #expect(typist.pressReturn().replacement == Replacement(
+            deleteCount: 6, text: "я хочу", layoutID: ua.id, followUpKey: KeyStroke(keyCode: KeyCode.returnKey)
+        ))
+    }
+
     @Test("Without layouts the engine passes everything")
     func passesWithoutLayouts() {
         var engine = LadEngine()

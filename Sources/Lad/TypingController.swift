@@ -32,6 +32,7 @@ final class TypingController {
         self.inputSources = inputSources
         self.selection = SelectionConverter(output: output)
         engine.isAutomatic = settings.isAutomatic
+        engine.convertsOnReturn = settings.convertsOnReturn
         engine.exceptions = Set(settings.exceptions)
         inputSources.onSelectionChange = { [weak self] layoutID in self?.layoutDidChange(to: layoutID) }
         inputSources.onEnabledChange = { [weak self] in self?.refreshLayouts() }
@@ -44,6 +45,7 @@ final class TypingController {
     var layouts: LayoutPair? { engine.layouts }
     var isTapRunning: Bool { tap?.isRunning ?? false }
     var isAutomatic: Bool { engine.isAutomatic }
+    var convertsOnReturn: Bool { engine.convertsOnReturn }
     /// The words never converted again, most recent first.
     var exceptions: [String] { settings.exceptions.reversed() }
 
@@ -76,6 +78,12 @@ final class TypingController {
     func setAutomatic(_ isAutomatic: Bool) {
         settings.isAutomatic = isAutomatic
         engine.isAutomatic = isAutomatic
+        onStateChange?()
+    }
+
+    func setConvertsOnReturn(_ converts: Bool) {
+        settings.convertsOnReturn = converts
+        engine.convertsOnReturn = converts
         onStateChange?()
     }
 

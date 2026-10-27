@@ -28,16 +28,19 @@ public enum InputEvent: Sendable, Equatable {
     case reset
 }
 
-/// Delete `deleteCount` characters before the caret, type `text`, then select layout `layoutID`.
+/// Delete `deleteCount` characters before the caret, type `text`, press `followUpKey` if any (the
+/// Return that ended the word), then select layout `layoutID`.
 public struct Replacement: Sendable, Equatable {
     public let deleteCount: Int
     public let text: String
     public let layoutID: String
+    public let followUpKey: KeyStroke?
 
-    public init(deleteCount: Int, text: String, layoutID: String) {
+    public init(deleteCount: Int, text: String, layoutID: String, followUpKey: KeyStroke? = nil) {
         self.deleteCount = deleteCount
         self.text = text
         self.layoutID = layoutID
+        self.followUpKey = followUpKey
     }
 }
 

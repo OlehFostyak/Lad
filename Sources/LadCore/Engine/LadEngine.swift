@@ -16,6 +16,8 @@ public struct LadEngine: Sendable {
     public var detector: Detector?
     /// Off: words are never converted on their own, double Shift still fixes them.
     public var isAutomatic = true
+    /// Return and keypad Enter convert the word before them too (the key is pressed again after).
+    public var convertsOnReturn = true
     /// Normalized typed words never to convert (the user turned them back).
     public var exceptions: Set<String> = []
 
@@ -104,6 +106,9 @@ extension LadEngine {
             deleteBackward(layouts: layouts)
             return .pass
         }
+        if keyCode == KeyCode.returnKey || keyCode == KeyCode.keypadEnter {
+            return finishLine(with: KeyStroke(keyCode: keyCode, shift: modifiers.contains(.shift)), layouts: layouts)
+        }
         let stroke = KeyStroke(keyCode: keyCode, shift: modifiers.contains(.shift), capsLock: modifiers.contains(.capsLock))
         guard KeyCode.typesText(keyCode), let typed = layouts.current.text(for: stroke),
               let other = layouts.other.text(for: stroke) else {
@@ -159,6 +164,22 @@ extension LadEngine {
             return .pass
         }
         return convertAutomatically(strokes, boundary: boundary, layouts: layouts)
+    }
+
+    /// Return or Enter ends the line. A word that converts is retyped and the key pressed again
+    /// after it (the app may send the message right away), so nothing of the line is kept for an undo.
+    private mutating func finishLine(with key: KeyStroke, layouts: LayoutPair) -> EngineOutput {
+        defer { reset() }
+        guard convertsOnReturn, !overflowed, !word.isEmpty, verdict(for: word, layouts: layouts) == .convert else {
+            return .pass
+        }
+        let segment = pendingStrokes(layouts: layouts) + word
+        guard let original = layouts.current.text(for: segment), let inserted = layouts.other.text(for: segment) else {
+            return .pass
+        }
+        self.layouts = layouts.swapped
+        let replacement = Replacement(deleteCount: original.count, text: inserted, layoutID: layouts.other.id, followUpKey: key)
+        return EngineOutput(suppressesEvent: true, replacement: replacement)
     }
 
     private func verdict(for strokes: [KeyStroke], layouts: LayoutPair) -> Verdict {

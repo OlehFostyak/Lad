@@ -67,6 +67,11 @@ struct Typist {
         engine.handle(.keyDown(keyCode: keyCode, modifiers: modifiers, isRepeat: false))
     }
 
+    @discardableResult
+    mutating func pressReturn(_ modifiers: Modifiers = []) -> EngineOutput {
+        press(KeyCode.returnKey, modifiers)
+    }
+
     mutating func doubleShift() -> EngineOutput {
         clock += 10
         _ = engine.handle(.modifiersChanged(.shift, time: clock))

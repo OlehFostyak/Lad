@@ -65,6 +65,7 @@ struct PanelView: View {
     private var switches: some View {
         VStack(alignment: .leading, spacing: 8) {
             SwitchRow(title: "Автоматичне перемикання", detail: "Виправляти слово на пробілі", isOn: $model.isAutomatic)
+            SwitchRow(title: "Виправляти й на Enter", detail: "Перед відправкою повідомлення", isOn: $model.convertsOnReturn)
             SwitchRow(title: "Звук при виправленні", detail: nil, isOn: $model.playsSound)
             SwitchRow(title: "Запускати разом із macOS", detail: nil, isOn: $model.launchesAtLogin)
             if model.loginNeedsApproval {

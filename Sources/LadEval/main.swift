@@ -214,7 +214,9 @@ func evaluateCode(corpus: Corpus, detector: Detector) -> (words: Int, conversion
         engine.reset()
         var recent = ""
         for character in text {
-            guard character != "\t", let stroke = corpus.latin.stroke(for: character) else {
+            // A line break is a press of Return, which ends (and may convert) a word too.
+            let lineStroke = character == "\n" ? KeyStroke(keyCode: KeyCode.returnKey) : nil
+            guard character != "\t", let stroke = lineStroke ?? corpus.latin.stroke(for: character) else {
                 _ = engine.handle(.reset)
                 continue
             }

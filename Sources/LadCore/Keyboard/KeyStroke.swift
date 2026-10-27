@@ -25,6 +25,8 @@ public struct KeyStroke: Hashable, Sendable {
 /// Virtual key codes (ANSI positions) Lad treats specially; the values match Carbon's kVK_* constants.
 public enum KeyCode {
     public static let returnKey: UInt16 = 36
+    /// Enter on the numeric keypad.
+    public static let keypadEnter: UInt16 = 76
     public static let tab: UInt16 = 48
     public static let space: UInt16 = 49
     public static let delete: UInt16 = 51

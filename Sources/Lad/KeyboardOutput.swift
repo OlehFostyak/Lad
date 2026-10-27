@@ -28,6 +28,9 @@ final class KeyboardOutput {
             press(KeyCode.delete)
         }
         type(replacement.text)
+        if let key = replacement.followUpKey {
+            press(key.keyCode, flags: key.shift ? .maskShift : [])
+        }
     }
 
     func press(_ keyCode: UInt16, flags: CGEventFlags = []) {

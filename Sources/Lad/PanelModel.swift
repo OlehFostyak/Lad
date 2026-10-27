@@ -24,6 +24,9 @@ final class PanelModel: ObservableObject {
     @Published var isAutomatic = true {
         didSet { apply { controller.setAutomatic(isAutomatic) } }
     }
+    @Published var convertsOnReturn = true {
+        didSet { apply { controller.setConvertsOnReturn(convertsOnReturn) } }
+    }
     @Published var playsSound = false {
         didSet { apply { settings.playsSound = playsSound } }
     }
@@ -55,6 +58,7 @@ final class PanelModel: ObservableObject {
         defer { isRefreshing = false }
         health = Self.health(of: controller)
         isAutomatic = controller.isAutomatic
+        convertsOnReturn = controller.convertsOnReturn
         exceptions = controller.exceptions
         playsSound = settings.playsSound
         iconStyle = settings.iconStyle
