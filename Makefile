@@ -22,6 +22,7 @@ CONFIG      ?= release
 SWIFT       ?= swift
 PYTHON      ?= python3
 FIXTURE     := $(PKG)/Tests/LadCoreTests/Fixtures/layouts.json
+SYMBOL_ALLOWLIST := $(PKG)/tools/allowed-symbols.txt
 
 # Extra SwiftPM flags; `SWIFTPM_FLAGS=--build-system native` is the fallback if a CLT update breaks
 # the default swiftbuild engine.
@@ -69,7 +70,7 @@ BUILD_NUMBER ?= $(if $(GIT_COUNT),$(GIT_COUNT),$(shell date +%Y%m%d%H%M))
 EVAL_FLAGS  ?=
 
 .DEFAULT_GOAL := build
-.PHONY: doctor build test check coverage eval fixtures dictionaries icon setup-signing bundle-check bundle \
+.PHONY: doctor build test check coverage eval fixtures dictionaries icon symbols setup-signing bundle-check bundle \
         verify install run stop restart logs uninstall clean
 
 # Checks the machine: Swift, the Swift Testing plugins, the signing identity and ~/Applications.
@@ -137,6 +138,15 @@ fixtures:
 
 dictionaries:
 	$(PYTHON) -I "$(PKG)/tools/build_dictionaries.py"
+
+# Rewrites the allow-list of symbols the app may import, from a fresh release build. Review the
+# diff before committing it: every new symbol is a new capability (make verify enforces the list).
+symbols: build
+	@bin="$$($(SWIFT) build $(SPM) -c $(CONFIG) --show-bin-path)/$(NAME)"; \
+	{ echo "# Non-Swift symbols the Lad binary may import (make verify). Regenerate with make symbols"; \
+	  echo "# and review the diff: a new symbol is a new capability."; \
+	  nm -u "$$bin" | grep -v '^_\$$s' | LC_ALL=C sort -u; } > "$(SYMBOL_ALLOWLIST)"; \
+	echo "wrote $(SYMBOL_ALLOWLIST) ($$(grep -vc '^#' "$(SYMBOL_ALLOWLIST)") symbols)"
 
 # Once: creates the signing keychain and identity. Interactive (asks for a new password).
 setup-signing:
@@ -224,7 +234,16 @@ verify:
 	done; \
 	forbidden="$$(nm -u "$$binary" | grep -E '^_(socket|connect|getaddrinfo|nw_|posix_spawn|execv|execve|dlopen|CFSocket|CFReadStreamCreateForHTTPRequest)|NSURLSession|NSURLConnection' || true)"; \
 	if [ -n "$$forbidden" ]; then echo "error: the binary imports $$forbidden" >&2; exit 1; fi; \
-	echo "  ok: only system frameworks; no network or process-spawning symbols"
+	echo "  ok: only system frameworks; no network or process-spawning symbols"; \
+	allowed="$$(mktemp)"; \
+	grep -v '^#' "$(SYMBOL_ALLOWLIST)" | LC_ALL=C sort -u > "$$allowed"; \
+	unexpected="$$(nm -u "$$binary" | grep -v '^_\$$s' | LC_ALL=C sort -u | LC_ALL=C comm -23 - "$$allowed")"; \
+	rm -f "$$allowed"; \
+	if [ -n "$$unexpected" ]; then \
+	  echo "error: the binary imports symbols missing from tools/allowed-symbols.txt (review them, then make symbols):" >&2; \
+	  printf '  %s\n' $$unexpected >&2; exit 1; \
+	fi; \
+	echo "  ok: every imported symbol is on tools/allowed-symbols.txt"
 
 # bundle → stop → ditto to Lad.app.new → swap with two renames → lsregister -f → open.
 install: bundle

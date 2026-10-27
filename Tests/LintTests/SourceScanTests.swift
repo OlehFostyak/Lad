@@ -50,10 +50,13 @@ struct SourceScanTests {
         }
     }
 
-    @Test("No network, process, scripting or broadcast API", arguments: [
+    @Test("No network, process, scripting, broadcast or side-storage API", arguments: [
         "URLSession", "URLRequest", "NWConnection", "NWListener", "NWBrowser", "CFSocket", "CFStream", "CFReadStream",
         "CFWriteStream", "NSURLConnection", "WKWebView", "getaddrinfo", "socket(", "Host(", "NSHost(", "NSHost.current", "Process(", "NSTask",
-        "NSAppleScript", "OSAScript", "postNotificationName", "://", "dlopen", "posix_spawn", "NSXPCConnection",
+        "NSAppleScript", "OSAScript", "postNotificationName", "post(name:", "://", "dlopen", "posix_spawn", "NSXPCConnection",
+        "CFNotificationCenterGetDistributedCenter", "NSUserActivity", "NSSharingService", "NSPerformService",
+        "NSAppleEventDescriptor", "AESend", "CFPreferences", "AppStorage", "SceneStorage", "NSUbiquitousKeyValueStore",
+        "SecItem", "kAXValueAttribute",
     ])
     func noOutboundAPI(api: String) {
         for file in Self.shipped {
@@ -63,7 +66,7 @@ struct SourceScanTests {
 
     @Test("Logging only through Log.record", arguments: [
         "Logger(", "os_log", "NSLog", "privacy:", "print(", "debugPrint", "dump(", "fputs", "standardError",
-        "standardOutput", "FileHandle",
+        "standardOutput", "FileHandle", "syslog", "os_signpost", "OSSignposter", "CFShow", "puts(", "fwrite",
     ])
     func loggingOnlyInLog(api: String) {
         for file in Self.shipped where file.name != "Log.swift" {
@@ -79,16 +82,23 @@ struct SourceScanTests {
         }
     }
 
-    @Test("Disk and pasteboard access stay in their files")
+    @Test("Disk, pasteboard, Accessibility and notification access stay in their files")
     func confinedAccess() {
         let rules: [(api: String, files: Set<String>)] = [
             ("UserDefaults", ["Settings.swift"]),
+            ("suiteName:", ["Settings.swift"]),
             ("contentsOf", ["DictionaryLoader.swift"]),
             ("NSPasteboard", ["SelectionTransformer.swift"]),
             ("FileManager", []),
             (".write(", []),
             ("createFile", []),
             ("NSWorkspace.shared.open", ["Permissions.swift", "PanelModel.swift"]),
+            ("AXUIElementCopy", ["SelectionTransformer.swift", "LayoutHint.swift"]),
+            ("AXUIElementSet", ["SelectionTransformer.swift", "FocusObserver.swift"]),
+            ("AXObserver", ["FocusObserver.swift"]),
+            // Only the selection rewrite reads text, and only the selected part.
+            ("kAXSelectedTextAttribute", ["SelectionTransformer.swift"]),
+            ("DistributedNotificationCenter", ["InputSources.swift"]),
         ]
         for file in Self.shipped {
             for rule in rules where file.text.contains(rule.api) {
