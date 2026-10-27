@@ -50,6 +50,21 @@ struct EngineCaseFixTests {
         #expect(typist.type("ПРивіт ", on: ua).isEmpty)
     }
 
+    @Test("With Caps Lock on, a word in the wrong layout still converts, in capitals")
+    func convertsUnderCapsLock() throws {
+        var typist = Typist(Fixture.typingInUS)
+        let output = try #require(typist.typeWithCapsLock("ghbdsn ", on: us).last)
+        #expect(output.replacement == Replacement(deleteCount: 6, text: "ПРИВІТ ", layoutID: ua.id))
+        var english = Typist(Fixture.typingInUA)
+        #expect(english.typeWithCapsLock("руддщ ", on: ua).last?.replacement?.text == "HELLO ")
+    }
+
+    @Test("Capitals typed with Shift stay an acronym")
+    func keepsShiftedCapitals() {
+        var typist = Typist(Fixture.typingInUS)
+        #expect(typist.type("GHBDSN ", on: us).isEmpty)
+    }
+
     @Test("The fix happens at Return too, and can be switched off")
     func fixesAtReturnAndSwitchesOff() {
         var typist = Typist(Fixture.typingInUA)

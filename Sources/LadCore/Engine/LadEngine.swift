@@ -226,11 +226,17 @@ extension LadEngine {
         guard isAutomatic, let typedLanguage = layouts.current.language, let otherLanguage = layouts.other.language,
               let typed = layouts.current.text(for: strokes), let other = layouts.other.text(for: strokes) else { return .keep }
         let normalized = WordText.normalized(typed)
-        if learnedWords.contains(normalized), !exceptions.contains(normalized), Detector.hasPlainCase(typed, in: typedLanguage) {
+        // On a Mac, Shift with Caps Lock still types capitals: a Caps Lock word is all caps whatever
+        // was meant, so its case is no evidence (GHBDSN typed that way is ПРИВІТ).
+        let capsLocked = strokes.allSatisfy(\.capsLock)
+        let hasPlainCase = capsLocked || Detector.hasPlainCase(typed, in: typedLanguage)
+        if learnedWords.contains(normalized), !exceptions.contains(normalized), hasPlainCase {
             return .convert
         }
         guard let detector else { return .keep }
-        return detector.verdict(typed: typed, in: typedLanguage, other: other, in: otherLanguage, exceptions: exceptions)
+        return detector.verdict(
+            typed: typed, in: typedLanguage, other: other, in: otherLanguage, exceptions: exceptions, capsLocked: capsLocked
+        )
     }
 
     private mutating func remember(_ typedWord: TypedWord) {

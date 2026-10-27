@@ -62,6 +62,21 @@ struct Typist {
         return outputs
     }
 
+    /// Presses the plain keys of lowercase `text` with Caps Lock on.
+    @discardableResult
+    mutating func typeWithCapsLock(_ text: String, on table: LayoutTable) -> [EngineOutput] {
+        var outputs: [EngineOutput] = []
+        for character in text {
+            guard let stroke = table.stroke(for: character) else {
+                Issue.record("\(character) is not on \(table.name)")
+                continue
+            }
+            let output = press(stroke.keyCode, stroke.shift ? [.shift, .capsLock] : .capsLock)
+            if output != .pass { outputs.append(output) }
+        }
+        return outputs
+    }
+
     @discardableResult
     mutating func press(_ keyCode: UInt16, _ modifiers: Modifiers = []) -> EngineOutput {
         engine.handle(.keyDown(keyCode: keyCode, modifiers: modifiers, isRepeat: false))

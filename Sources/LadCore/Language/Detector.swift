@@ -81,20 +81,24 @@ public struct Detector: Sendable {
     /// The verdict on `typed` (what the keys typed in the user's layout) against `other` (what the
     /// same keys type in the other layout). `exceptions` holds normalized typed words the user
     /// turned back before.
+    /// `capsLocked`: Caps Lock typed the whole word, so its capitals say nothing about it.
     public func verdict(
         typed: String, in typedLanguage: Language, other: String, in otherLanguage: Language,
-        exceptions: Set<String> = []
+        exceptions: Set<String> = [], capsLocked: Bool = false
     ) -> Verdict {
-        evaluate(typed: typed, in: typedLanguage, other: other, in: otherLanguage, exceptions: exceptions).verdict
+        evaluate(
+            typed: typed, in: typedLanguage, other: other, in: otherLanguage, exceptions: exceptions, capsLocked: capsLocked
+        ).verdict
     }
 
     public func evaluate(
         typed: String, in typedLanguage: Language, other: String, in otherLanguage: Language,
-        exceptions: Set<String> = []
+        exceptions: Set<String> = [], capsLocked: Bool = false
     ) -> Evaluation {
         guard let typedModel = models[typedLanguage], let otherModel = models[otherLanguage],
               let otherWord = WordText.core(of: other, in: otherLanguage),
-              !exceptions.contains(WordText.normalized(typed)), Self.hasPlainCase(typed, in: typedLanguage) else {
+              !exceptions.contains(WordText.normalized(typed)),
+              capsLocked || Self.hasPlainCase(typed, in: typedLanguage) else {
             return .keep
         }
         let (typedScore, typedIsListed) = score(ofTyped: typed, in: typedModel)
