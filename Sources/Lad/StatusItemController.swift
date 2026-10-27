@@ -35,6 +35,16 @@ final class StatusItemController: NSObject {
         model.refresh()
         NSApp.activate()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        // A menu bar app has no window of its own to become key: without this the popover opens
+        // unfocused and the first click only focuses it. Activation finishes a moment later, so
+        // the popover is made key again on the next turn of the run loop.
+        makePanelKey()
+        Task { makePanelKey() }
+    }
+
+    private func makePanelKey() {
+        guard popover.isShown, let window = popover.contentViewController?.view.window else { return }
+        window.makeKey()
     }
 
     /// The icon: the chosen style; dimmed while manual-only; a warning when Lad cannot work.

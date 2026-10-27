@@ -230,6 +230,13 @@ verify:
 install: bundle
 	@case "$(INSTALL_DIR)" in ""|/) echo "error: refusing INSTALL_DIR='$(INSTALL_DIR)'" >&2; exit 1;; esac
 	@$(MAKE) --no-print-directory stop
+	@old="$$(codesign -d -r- "$(INSTALLED)" 2>/dev/null | sed -n 's/^#* *designated => //p')"; \
+	new="$$(codesign -d -r- "$(APPDIR)" 2>/dev/null | sed -n 's/^#* *designated => //p')"; \
+	if [ -n "$$old" ] && [ "$$old" != "$$new" ]; then \
+	  echo "The signature changed: macOS would keep Lad's old Accessibility entry and ignore it."; \
+	  echo "Resetting it (tccutil reset Accessibility $(BUNDLE_ID)); grant Lad again when it asks."; \
+	  tccutil reset Accessibility "$(BUNDLE_ID)" || true; \
+	fi
 	mkdir -p "$(INSTALL_DIR)"
 	rm -rf "$(INSTALLED).new" "$(INSTALLED).old"
 	ditto "$(APPDIR)" "$(INSTALLED).new"
