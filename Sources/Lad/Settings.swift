@@ -22,6 +22,7 @@ final class Settings {
         static let fixesTwoCapitals = "fixesTwoCapitals"
         static let remembersAppLayouts = "remembersAppLayouts"
         static let showsLayoutHint = "showsLayoutHint"
+        static let usageCounts = "usageCounts"
         static let appLayouts = "appLayouts"
         static let exceptions = "exceptions"
         static let learnedWords = "learnedWords"
@@ -70,6 +71,12 @@ final class Settings {
     var showsLayoutHint: Bool {
         get { defaults.bool(forKey: Key.showsLayoutHint) }
         set { defaults.set(newValue, forKey: Key.showsLayoutHint) }
+    }
+
+    /// "2026-10-27" → the number of fixes that day, for the last week. Numbers only.
+    var usageCounts: [String: Int] {
+        get { (defaults.dictionary(forKey: Key.usageCounts) as? [String: Int]) ?? [:] }
+        set { defaults.set(newValue, forKey: Key.usageCounts) }
     }
 
     /// Bundle ID → input source ID of the layout last used in the app.

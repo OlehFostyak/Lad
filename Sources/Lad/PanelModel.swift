@@ -22,6 +22,8 @@ final class PanelModel: ObservableObject {
     /// Most recent first.
     @Published private(set) var learnedWords: [String] = []
     @Published private(set) var loginNeedsApproval = false
+    @Published private(set) var fixesThisWeek = 0
+    @Published private(set) var fixesToday = 0
     /// macOS's own per-document switching is on, so Lad's memory of layouts per app rests.
     @Published private(set) var systemSwitchesPerDocument = false
 
@@ -75,6 +77,7 @@ final class PanelModel: ObservableObject {
         fixesTwoCapitals = controller.fixesTwoCapitals
         remembersAppLayouts = controller.remembersAppLayouts
         showsLayoutHint = controller.showsLayoutHint
+        (fixesThisWeek, fixesToday) = controller.fixCounts
         systemSwitchesPerDocument = controller.systemSwitchesPerDocument
         exceptions = controller.exceptions
         learnedWords = controller.learnedWords

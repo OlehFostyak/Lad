@@ -118,7 +118,8 @@ struct PanelView: View {
     private var footer: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Lad \(model.version)").font(.caption)
+                Text("За тиждень виправлено \(model.fixesThisWeek) · сьогодні \(model.fixesToday)").font(.caption)
+                Text("Lad \(model.version)").font(.caption2).foregroundStyle(.secondary)
                 Text("Без мережі. Набране не зберігається, крім твоїх винятків.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)

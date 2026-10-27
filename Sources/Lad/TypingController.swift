@@ -20,6 +20,7 @@ final class TypingController {
     private var frontProcessID: pid_t?
     private var frontBundleID: String?
     private var appLayouts: LayoutMemory
+    private var usage: UsageCounter
     private let settings: Settings
     private let inputSources: InputSources
     private let output = KeyboardOutput()
@@ -37,6 +38,7 @@ final class TypingController {
         self.inputSources = inputSources
         self.selection = SelectionConverter(output: output)
         self.appLayouts = LayoutMemory(settings.appLayouts)
+        self.usage = UsageCounter(counts: settings.usageCounts)
         engine.isAutomatic = settings.isAutomatic
         engine.convertsOnReturn = settings.convertsOnReturn
         engine.fixesTwoCapitals = settings.fixesTwoCapitals
@@ -61,6 +63,12 @@ final class TypingController {
     }
 
     var showsLayoutHint: Bool { settings.showsLayoutHint }
+
+    /// Fixes over the last seven days and today.
+    var fixCounts: (week: Int, today: Int) {
+        let now = Date()
+        return (usage.weekTotal(endingOn: now), usage.count(on: now))
+    }
 
     func setShowsLayoutHint(_ shows: Bool) {
         settings.showsLayoutHint = shows
@@ -167,6 +175,7 @@ final class TypingController {
         if let replacement = result.replacement {
             output.perform(replacement)
             select(replacement.layoutID)
+            countFix()
             if settings.playsSound {
                 sound?.stop()
                 sound?.play()
@@ -181,9 +190,15 @@ final class TypingController {
                 select(layoutID)
                 engine.currentLayoutDidChange(to: layoutID)
                 showHint(for: layoutID)
+                countFix()
             }
         }
         return result.suppressesEvent
+    }
+
+    private func countFix() {
+        usage.record(on: Date())
+        settings.usageCounts = usage.counts
     }
 
     private func perform(_ hotkey: Hotkey) {
