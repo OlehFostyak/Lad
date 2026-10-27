@@ -66,9 +66,12 @@ public struct Evaluation: Sendable, Equatable {
 /// the word is in the language of the layout it was typed in with how likely its twin (the same
 /// keys in the other layout) is in the other language.
 public struct Detector: Sendable {
-    /// Latin code and shell tokens whose keys spell a common Ukrainian word (db → ви, ns → ті).
-    /// They never convert alone, only along with a following word that converts.
-    public static let codeTokens: Set<String> = ["db", "ns", "nb", "vb", "nt", "ps", "sp", "lt", "ws", "ne", "jq", "ecs"]
+    /// Latin code and shell tokens, and tech acronyms typed lowercase, whose keys spell a common
+    /// Ukrainian word (db → ви, ns → ті, src → ікс, csv → сім). They never convert alone, only
+    /// along with a following word that converts.
+    public static let codeTokens: Set<String> = [
+        "db", "ns", "nb", "vb", "nt", "ps", "sp", "lt", "ws", "ne", "jq", "ecs", "src", "csv", "jwt", "otp", "hsl",
+    ]
 
     public let config: DetectorConfig
     private let models: [Language: LanguageModel]

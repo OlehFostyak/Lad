@@ -15,6 +15,21 @@ struct LayoutMemoryTests {
         #expect(memory.layoutToRestore(for: "ru.keepcoder.Telegram", current: "us", enabled: enabled) == "ua")
     }
 
+    @Test("Only the most recently used apps are kept")
+    func keepsRecentApps() {
+        var memory = LayoutMemory()
+        for index in 0...LayoutMemory.maxApps {
+            memory.remember("ua", for: "app\(index)")
+        }
+        memory.remember("us", for: "app1")
+        memory.remember("us", for: "late")
+        #expect(memory.layouts.count == LayoutMemory.maxApps)
+        #expect(memory.layouts["app0"] == nil)
+        #expect(memory.layouts["app2"] == nil)
+        #expect(memory.layouts["app1"] == "us")
+        #expect(memory.layouts["late"] == "us")
+    }
+
     @Test("Nothing to do for a new app, the layout in use or a disabled layout")
     func restoresNothing() {
         let memory = LayoutMemory(["app": "ua", "old": "ru"])

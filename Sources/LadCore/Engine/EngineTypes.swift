@@ -57,10 +57,12 @@ public struct EngineOutput: Sendable, Equatable {
     public var forgottenWord: String?
     /// Nothing typed to fix: convert the selected text instead.
     public var convertsSelection: Bool
+    /// The replacement turns the last fix back.
+    public var isUndo: Bool
 
     public init(
         suppressesEvent: Bool = false, replacement: Replacement? = nil, learnedException: String? = nil,
-        learnedWord: String? = nil, forgottenWord: String? = nil, convertsSelection: Bool = false
+        learnedWord: String? = nil, forgottenWord: String? = nil, convertsSelection: Bool = false, isUndo: Bool = false
     ) {
         self.suppressesEvent = suppressesEvent
         self.replacement = replacement
@@ -68,6 +70,7 @@ public struct EngineOutput: Sendable, Equatable {
         self.learnedWord = learnedWord
         self.forgottenWord = forgottenWord
         self.convertsSelection = convertsSelection
+        self.isUndo = isUndo
     }
 
     public static let pass = EngineOutput()

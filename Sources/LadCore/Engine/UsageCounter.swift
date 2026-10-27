@@ -19,6 +19,13 @@ public struct UsageCounter: Sendable, Equatable {
         counts = counts.filter { $0.key >= cutoff }
     }
 
+    /// A fix turned back comes off the day's count again.
+    public mutating func remove(on date: Date, calendar: Calendar = .current) {
+        let key = Self.key(for: date, calendar: calendar)
+        guard let count = counts[key] else { return }
+        counts[key] = count > 1 ? count - 1 : nil
+    }
+
     public func count(on date: Date, calendar: Calendar = .current) -> Int {
         counts[Self.key(for: date, calendar: calendar)] ?? 0
     }

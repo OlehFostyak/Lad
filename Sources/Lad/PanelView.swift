@@ -74,6 +74,11 @@ struct PanelView: View {
                 : "Програма отримує ту розкладку, що була в ній востаннє",
             isOn: $model.remembersAppLayouts
         )
+        if model.rememberedAppCount > 0 {
+            Button("Забути розкладки програм (\(model.rememberedAppCount))", action: model.forgetAppLayouts)
+                .buttonStyle(.link)
+                .font(.caption)
+        }
         SwitchRow(title: "Показувати розкладку біля курсора", detail: "UA / EN на мить, коли Lad перемикає", isOn: $model.showsLayoutHint)
         iconPicker
     }

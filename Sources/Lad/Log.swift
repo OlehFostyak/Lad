@@ -10,6 +10,8 @@ enum LogEvent {
     case wordListsFailed
     case loginItemFailed
     case anotherInstanceRunning
+    /// Enough unstamped key presses came: keys stamped with another process ID are now left alone.
+    case foreignKeyFilterReady
 }
 
 enum Log {
@@ -23,6 +25,7 @@ enum Log {
         case .wordListsFailed: logger.error("word lists failed to load")
         case .loginItemFailed: logger.error("login item change failed")
         case .anotherInstanceRunning: logger.notice("another Lad is running; quitting")
+        case .foreignKeyFilterReady: logger.notice("keys posted by other programs are now ignored")
         }
     }
 }

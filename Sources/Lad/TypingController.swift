@@ -40,7 +40,6 @@ final class TypingController {
         self.appLayouts = LayoutMemory(settings.appLayouts)
         self.usage = UsageCounter(counts: settings.usageCounts)
         engine.isAutomatic = settings.isAutomatic
-        engine.convertsOnReturn = settings.convertsOnReturn
         engine.fixesTwoCapitals = settings.fixesTwoCapitals
         engine.exceptions = Set(settings.exceptions)
         engine.learnedWords = Set(settings.learnedWords)
@@ -50,16 +49,40 @@ final class TypingController {
         observeWorkspace()
         frontProcessID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         frontBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        updateReturnConversion()
         refreshLayouts()
     }
+
+    /// Terminals: a word before Return may be a password at a prompt that does not echo (sudo,
+    /// ssh), so Lad never retypes it there; the space still converts words in prompts.
+    private static let terminals: Set<String> = [
+        "com.apple.Terminal", "dev.warp.Warp-Stable", "dev.warp.Warp", "dev.warp.Warp-Preview",
+        "com.googlecode.iterm2", "com.mitchellh.ghostty", "org.alacritty", "io.alacritty", "net.kovidgoyal.kitty",
+        "com.github.wez.wezterm", "co.zeit.hyper", "org.tabby", "com.raphaelamorim.rio",
+    ]
 
     var remembersAppLayouts: Bool { settings.remembersAppLayouts }
     /// macOS switches input sources per document itself, which would fight Lad's memory.
     var systemSwitchesPerDocument: Bool { settings.systemSwitchesPerDocument }
+    var rememberedAppCount: Int { appLayouts.layouts.count }
 
+    /// Turning the memory off also forgets which apps it knew.
     func setRemembersAppLayouts(_ remembers: Bool) {
         settings.remembersAppLayouts = remembers
+        if !remembers {
+            forgetAppLayouts()
+        }
         onStateChange?()
+    }
+
+    func forgetAppLayouts() {
+        appLayouts = LayoutMemory()
+        settings.appLayouts = [:]
+        onStateChange?()
+    }
+
+    private func updateReturnConversion() {
+        engine.convertsOnReturn = settings.convertsOnReturn && !Self.terminals.contains(frontBundleID ?? "")
     }
 
     var showsLayoutHint: Bool { settings.showsLayoutHint }
@@ -78,7 +101,7 @@ final class TypingController {
     var layouts: LayoutPair? { engine.layouts }
     var isTapRunning: Bool { tap?.isRunning ?? false }
     var isAutomatic: Bool { engine.isAutomatic }
-    var convertsOnReturn: Bool { engine.convertsOnReturn }
+    var convertsOnReturn: Bool { settings.convertsOnReturn }
     var fixesTwoCapitals: Bool { engine.fixesTwoCapitals }
     /// The words never converted again, most recent first.
     var exceptions: [String] { settings.exceptions.reversed() }
@@ -119,7 +142,7 @@ final class TypingController {
 
     func setConvertsOnReturn(_ converts: Bool) {
         settings.convertsOnReturn = converts
-        engine.convertsOnReturn = converts
+        updateReturnConversion()
         onStateChange?()
     }
 
@@ -160,13 +183,24 @@ final class TypingController {
 
     private func handle(_ event: InputEvent, from origin: InputOrigin) -> Bool {
         // Secure input (password fields, Terminal's Secure Keyboard Entry): Lad stays out entirely.
-        // So it does for keys another program types (auto-typed passwords, text expanders).
-        guard !IsSecureEventInputEnabled(), !isTypedByProgram(event, from: origin) else {
+        guard !IsSecureEventInputEnabled() else {
             engine.reset()
             return false
         }
+        // So it does for keys another program types (auto-typed passwords, text expanders), up to
+        // the next word: the user may finish the one the program typed into.
+        guard !isTypedByProgram(event, from: origin) else {
+            engine.skipWord()
+            return false
+        }
+        if case .keyDown = event {
+            syncFrontApp()
+        }
         if let hotkey = Hotkey.matching(event) {
-            perform(hotkey)
+            // A held shortcut repeats; the repeats are swallowed too, but only the first press acts.
+            if case .keyDown(_, _, false) = event {
+                perform(hotkey)
+            }
             return true
         }
         let layoutBefore = engine.layouts?.current.id
@@ -175,7 +209,11 @@ final class TypingController {
         if let replacement = result.replacement {
             output.perform(replacement)
             select(replacement.layoutID)
-            countFix()
+            if result.isUndo {
+                uncountFix()
+            } else {
+                countFix()
+            }
             if settings.playsSound {
                 sound?.stop()
                 sound?.play()
@@ -185,7 +223,7 @@ final class TypingController {
             }
         }
         if result.convertsSelection, let layouts = engine.layouts {
-            rewriteSelection { text in
+            rewriteSelection(allowsPasteboard: true) { text in
                 TextConverter.convert(text, layouts: layouts).map { SelectionEdit(text: $0.text, layoutID: $0.layoutID) }
             }
         }
@@ -197,25 +235,31 @@ final class TypingController {
         settings.usageCounts = usage.counts
     }
 
+    /// A fix turned back was no fix.
+    private func uncountFix() {
+        usage.remove(on: Date())
+        settings.usageCounts = usage.counts
+    }
+
     private func perform(_ hotkey: Hotkey) {
         switch hotkey {
         case .toggleAutomatic:
+            // Only the automatic fixes stop; double Shift and the hotkeys keep working.
             setAutomatic(!engine.isAutomatic)
-            showHint(engine.isAutomatic ? "Lad увімк." : "Lad вимк.", ukrainian: false)
+            showHint(engine.isAutomatic ? "Авто увімк." : "Авто вимк.", ukrainian: false)
         case .transliterate:
-            rewriteSelection { Transliterator.ukrainianToLatin($0).map { SelectionEdit(text: $0, layoutID: nil) } }
+            rewriteSelection(allowsPasteboard: false) { Transliterator.ukrainianToLatin($0).map { SelectionEdit(text: $0, layoutID: nil) } }
         case .cycleCase:
-            rewriteSelection { CaseCycle.next($0).map { SelectionEdit(text: $0, layoutID: nil) } }
+            rewriteSelection(allowsPasteboard: false) { CaseCycle.next($0).map { SelectionEdit(text: $0, layoutID: nil) } }
         }
     }
 
-    /// Rewrites the selection; a layout conversion also switches the layout.
-    private func rewriteSelection(_ transform: @escaping SelectionTransformer.Transform) {
+    /// Rewrites the selection; a layout conversion also switches the layout and counts as a fix.
+    private func rewriteSelection(allowsPasteboard: Bool, _ transform: @escaping SelectionTransformer.Transform) {
         engine.reset()
-        selection.apply(transform) { [weak self] edit in
-            guard let self, let edit else { return }
+        selection.apply(transform, allowsPasteboard: allowsPasteboard) { [weak self] edit in
+            guard let self, let layoutID = edit?.layoutID else { return }
             countFix()
-            guard let layoutID = edit.layoutID else { return }
             select(layoutID)
             engine.currentLayoutDidChange(to: layoutID)
             showHint(for: layoutID)
@@ -238,9 +282,14 @@ final class TypingController {
     /// Key presses posted by another program, or coming faster than a hand types.
     private func isTypedByProgram(_ event: InputEvent, from origin: InputOrigin) -> Bool {
         switch event {
-        case .keyDown:
+        case let .keyDown(_, _, isRepeat):
+            let wasCalibrated = sources.isCalibrated
             let isForeign = sources.isForeign(origin)
-            let isMachine = rhythm.isMachine(at: origin.time)
+            if !wasCalibrated, sources.isCalibrated {
+                Log.record(.foreignKeyFilterReady)
+            }
+            // A held key repeats at the system's pace, which may well be a program's.
+            let isMachine = !isRepeat && rhythm.isMachine(at: origin.time)
             return isForeign || isMachine
         case .modifiersChanged:
             return origin.processID != 0 && sources.isCalibrated
@@ -280,8 +329,10 @@ final class TypingController {
         }
     }
 
+    /// Not under secure input: macOS forces a Latin layout into password fields, which is not the
+    /// app's layout, and keeps it there.
     private var isRememberingLayouts: Bool {
-        settings.remembersAppLayouts && !settings.systemSwitchesPerDocument
+        settings.remembersAppLayouts && !settings.systemSwitchesPerDocument && !IsSecureEventInputEnabled()
     }
 
     /// The layout now in use belongs to the app in front, whoever switched it.
@@ -326,11 +377,20 @@ final class TypingController {
         }
     }
 
+    /// The app switch notification can lag behind the keys: if another app is in front already,
+    /// Lad catches up before the key, so it never retypes words of the previous app in this one.
+    private func syncFrontApp() {
+        guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != frontProcessID,
+              app.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
+        appDidActivate(bundleID: app.bundleIdentifier, processID: app.processIdentifier)
+    }
+
     private func appDidActivate(bundleID: String?, processID: pid_t?) {
         // Lad's own panel does not count as switching apps.
         guard bundleID != Bundle.main.bundleIdentifier else { return }
         frontProcessID = processID
         frontBundleID = bundleID
+        updateReturnConversion()
         focus.observe(processID: processID)
         restoreLayout(for: bundleID)
         // Apps can keep their own input source: re-read it rather than trust the engine's.

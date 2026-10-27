@@ -224,6 +224,34 @@ struct LadEngineTests {
         #expect(shortcut.pressReturn(.command) == .pass)
     }
 
+    @Test("A line that ends in punctuation right after a word converts at Return, punctuation too")
+    func convertsBeforeClosingPunctuation() {
+        var period = Typist(Fixture.typingInUS)
+        period.type("ghbdsn/", on: us)
+        #expect(period.pressReturn().replacement == Replacement(
+            deleteCount: 7, text: "привіт.", layoutID: ua.id, followUpKey: KeyStroke(keyCode: KeyCode.returnKey)
+        ))
+        var chain = Typist(Fixture.typingInUS)
+        chain.type("z [jxe/", on: us)
+        #expect(chain.pressReturn().replacement?.text == "я хочу.")
+        var question = Typist(Fixture.typingInUS)
+        question.type("cghfdb&", on: us)
+        #expect(question.pressReturn().replacement?.text == "справи?")
+        var path = Typist(Fixture.typingInUS)
+        path.type("cd src/", on: us)
+        #expect(path.pressReturn() == .pass)
+        var hyphen = Typist(Fixture.typingInUS)
+        hyphen.type("ghbdsn-", on: us)
+        #expect(hyphen.pressReturn() == .pass)
+    }
+
+    @Test("Fn+Return on a laptop is Enter, not a shortcut")
+    func convertsAtFnReturn() {
+        var typist = Typist(Fixture.typingInUS)
+        typist.type("ghbdsn", on: us)
+        #expect(typist.press(KeyCode.keypadEnter, .function).replacement?.text == "привіт")
+    }
+
     @Test("Pending words convert along at Return")
     func convertsPendingAtReturn() {
         var typist = Typist(Fixture.typingInUS)
@@ -233,40 +261,65 @@ struct LadEngineTests {
         ))
     }
 
-    @Test("A word fixed by hand is learned and converts on its own next time")
+    @Test("A word fixed by hand is learned once the user types on, then converts on its own")
     func learnsFromFixByHand() throws {
-        var typist = Typist(Fixture.typingInUS)
-        #expect(typist.type("db ", on: us).isEmpty)
+        var typist = Typist(Fixture.typingInUS, detector: Fixture.cautiousDetector)
+        #expect(typist.type("ghbdsn ", on: us).isEmpty)
         let fix = typist.doubleShift()
-        #expect(fix.replacement?.text == "ви ")
-        #expect(fix.learnedWord == "db")
-        #expect(typist.engine.learnedWords == ["db"])
+        #expect(fix.replacement?.text == "привіт ")
+        #expect(fix.learnedWord == nil)
+        #expect(typist.type("я", on: ua).first?.learnedWord == "ghbdsn")
+        #expect(typist.engine.learnedWords == ["ghbdsn"])
         typist.engine.currentLayoutDidChange(to: us.id)
-        let output = try #require(typist.type("db ", on: us).last)
-        #expect(output.replacement == Replacement(deleteCount: 2, text: "ви ", layoutID: ua.id))
+        let output = try #require(typist.type("ghbdsn ", on: us).last)
+        #expect(output.replacement == Replacement(deleteCount: 6, text: "привіт ", layoutID: ua.id))
+    }
+
+    @Test("A short word Lad leaves alone is learned from a fix by hand")
+    func learnsShortWord() throws {
+        var typist = Typist(Fixture.typingInUA)
+        #expect(typist.type("рш ", on: ua).isEmpty)
+        #expect(typist.doubleShift().replacement?.text == "hi ")
+        #expect(typist.type("x", on: us).first?.learnedWord == "рш")
+        typist.engine.reset()
+        typist.engine.currentLayoutDidChange(to: ua.id)
+        let output = try #require(typist.type("рш ", on: ua).last)
+        #expect(output.replacement == Replacement(deleteCount: 2, text: "hi ", layoutID: us.id))
     }
 
     @Test("A fix by hand turned back at once teaches nothing")
     func forgetsUndoneFix() {
-        var typist = Typist(Fixture.typingInUS)
-        typist.type("db ", on: us)
+        var typist = Typist(Fixture.typingInUS, detector: Fixture.cautiousDetector)
+        typist.type("ghbdsn ", on: us)
         _ = typist.doubleShift()
         let undo = typist.doubleShift()
-        #expect(undo.replacement?.text == "db ")
-        #expect(undo.forgottenWord == "db")
+        #expect(undo.replacement?.text == "ghbdsn ")
+        #expect(undo.forgottenWord == nil)
+        #expect(typist.type("x", on: us).isEmpty)
         #expect(typist.engine.learnedWords.isEmpty)
+    }
+
+    @Test("Code tokens, keyboard mash and real words are not learned")
+    func learnsOnlyWords() {
+        for typed in ["db ", "qzxvkw ", "here "] {
+            var typist = Typist(Fixture.typingInUS, detector: Fixture.cautiousDetector)
+            typist.type(typed, on: us)
+            _ = typist.doubleShift()
+            #expect(typist.press(KeyCode.space).learnedWord == nil, "\(typed) was learned")
+            #expect(typist.engine.learnedWords.isEmpty)
+        }
     }
 
     @Test("Turning back a learned conversion makes the word an exception")
     func learnedThenTurnedBack() {
-        var typist = Typist(Fixture.typingInUS)
-        typist.engine.learnedWords = ["db"]
-        #expect(typist.type("db ", on: us).last?.replacement?.text == "ви ")
+        var typist = Typist(Fixture.typingInUS, detector: Fixture.cautiousDetector)
+        typist.engine.learnedWords = ["ghbdsn"]
+        #expect(typist.type("ghbdsn ", on: us).last?.replacement?.text == "привіт ")
         let undo = typist.doubleShift()
-        #expect(undo.learnedException == "db")
-        #expect(undo.forgottenWord == "db")
+        #expect(undo.learnedException == "ghbdsn")
+        #expect(undo.forgottenWord == "ghbdsn")
         #expect(typist.engine.learnedWords.isEmpty)
-        #expect(typist.engine.exceptions == ["db"])
+        #expect(typist.engine.exceptions == ["ghbdsn"])
     }
 
     @Test("A fix in the middle of a word is learned whole when the word ends")
@@ -280,13 +333,44 @@ struct LadEngineTests {
         #expect(output.learnedWord == "ghbdsn")
     }
 
+    @Test("A fix in the middle of a word that ends at a digit is not learned")
+    func skipsWordsEndingAtSymbols() {
+        var typist = Typist(Fixture.typingInUS)
+        typist.type("ghbd", on: us)
+        _ = typist.doubleShift()
+        typist.type("іт", on: ua)
+        #expect(typist.press(18).learnedWord == nil)
+    }
+
+    @Test("A word fixed mid-way and then deleted teaches nothing")
+    func dropsLessonOfDeletedWord() {
+        var typist = Typist(Fixture.typingInUS)
+        typist.type("ghbd", on: us)
+        _ = typist.doubleShift()
+        for _ in 0..<4 {
+            typist.press(KeyCode.delete)
+        }
+        typist.type("привіт", on: ua)
+        #expect(typist.press(KeyCode.space).learnedWord == nil)
+        #expect(typist.engine.learnedWords.isEmpty)
+    }
+
+    @Test("After another program typed, the rest of its word is not followed")
+    func skipsProgramWord() throws {
+        var typist = Typist(Fixture.typingInUS)
+        typist.engine.skipWord()
+        #expect(typist.type("bdsn ", on: us).isEmpty)
+        let output = try #require(typist.type("ghbdsn ", on: us).last)
+        #expect(output.replacement?.text == "привіт ")
+    }
+
     @Test("Single letters are not learned")
     func skipsSingleLetters() {
         var typist = Typist(Fixture.typingInUS)
         typist.type("z ", on: us)
         let fix = typist.doubleShift()
         #expect(fix.replacement?.text == "я ")
-        #expect(fix.learnedWord == nil)
+        #expect(typist.press(KeyCode.space).learnedWord == nil)
     }
 
     @Test("Without layouts the engine passes everything")

@@ -65,6 +65,37 @@ struct EngineCaseFixTests {
         #expect(typist.type("GHBDSN ", on: us).isEmpty)
     }
 
+    @Test("Under Caps Lock, words of three letters or fewer stay acronyms")
+    func keepsCapsLockAcronyms() {
+        for acronym in ["csv ", "jwt ", "otp ", "src "] {
+            var typist = Typist(Fixture.typingInUS)
+            #expect(typist.typeWithCapsLock(acronym, on: us).isEmpty, "\(acronym) converted")
+        }
+        var ukrainian = Typist(Fixture.typingInUA)
+        #expect(ukrainian.typeWithCapsLock("дфс ", on: ua).isEmpty)
+    }
+
+    @Test("After a case fix the word is followed as it reads now")
+    func followsFixedCase() {
+        var typist = Typist(Fixture.typingInUA)
+        typist.type("ПРивіт ", on: ua)
+        typist.press(KeyCode.delete)
+        let fix = typist.doubleShift()
+        #expect(fix.replacement == Replacement(deleteCount: 6, text: "Ghbdsn", layoutID: us.id))
+        let undo = typist.doubleShift()
+        #expect(undo.replacement == Replacement(deleteCount: 6, text: "Привіт", layoutID: ua.id))
+        #expect(undo.isUndo)
+    }
+
+    @Test("Turning a case fix back puts the typed keys back too")
+    func undoRestoresTypedCase() {
+        var typist = Typist(Fixture.typingInUA)
+        typist.type("ПРивіт ", on: ua)
+        _ = typist.doubleShift()
+        typist.press(KeyCode.delete)
+        #expect(typist.doubleShift().replacement == Replacement(deleteCount: 6, text: "GHbdsn", layoutID: us.id))
+    }
+
     @Test("The fix happens at Return too, and can be switched off")
     func fixesAtReturnAndSwitchesOff() {
         var typist = Typist(Fixture.typingInUA)
@@ -75,5 +106,7 @@ struct EngineCaseFixTests {
         var off = Typist(Fixture.typingInUA)
         off.engine.fixesTwoCapitals = false
         #expect(off.type("ПРивіт ", on: ua).isEmpty)
+        var manual = Typist(Fixture.typingInUA, automatic: false)
+        #expect(manual.type("ПРивіт ", on: ua).isEmpty)
     }
 }

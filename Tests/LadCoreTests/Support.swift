@@ -30,6 +30,15 @@ enum Fixture {
 
     static let detector = Detector(models: models)
 
+    /// A detector that never converts on its own, to see what double Shift teaches.
+    static let cautiousDetector: Detector = {
+        var config = DetectorConfig.standard
+        config.margin = 1_000
+        config.shortMargin = 1_000
+        config.undecidedBand = 0
+        return Detector(models: models, config: config)
+    }()
+
     /// What the keys that type `text` in `table` type in `other`.
     static func retype(_ text: String, from table: LayoutTable, to other: LayoutTable) -> String {
         other.text(for: text.compactMap { table.stroke(for: $0) }) ?? ""
@@ -41,8 +50,8 @@ struct Typist {
     var engine: LadEngine
     private var clock: TimeInterval = 0
 
-    init(_ layouts: LayoutPair, automatic: Bool = true) {
-        engine = LadEngine(layouts: layouts, detector: Fixture.detector)
+    init(_ layouts: LayoutPair, automatic: Bool = true, detector: Detector = Fixture.detector) {
+        engine = LadEngine(layouts: layouts, detector: detector)
         engine.isAutomatic = automatic
     }
 

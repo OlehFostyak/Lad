@@ -13,8 +13,9 @@ enum IconStyle: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-/// Lad's preferences in UserDefaults: switches and the words the user turned back after an
-/// automatic conversion. Nothing else that was typed is ever stored.
+/// Lad's preferences in UserDefaults: switches, the two word lists the user builds with double
+/// Shift (exceptions and learned words), per-day fix counts and the layout last used in each app.
+/// Nothing else that was typed is ever stored.
 final class Settings {
     private enum Key {
         static let automatic = "automaticSwitching"

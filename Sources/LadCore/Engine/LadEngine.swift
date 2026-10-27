@@ -3,7 +3,9 @@ import Foundation
 /// Follows the typing one word at a time and decides when to retype a word in the other layout.
 ///
 /// It keeps only the current word, the last few words and the last conversion, as key strokes in
-/// memory; nothing is stored or logged. Anything that moves the caret or the focus forgets them.
+/// memory, and logs nothing. The only typed words it hands out for storing are the user's own
+/// lists: exceptions (fixes turned back) and learned words (fixes made by hand that stood).
+/// Anything that moves the caret or the focus forgets the rest.
 public struct LadEngine: Sendable {
     /// The longest run of word keys Lad follows; longer runs are not words and are dropped.
     public static let maxWordLength = 40
@@ -13,6 +15,11 @@ public struct LadEngine: Sendable {
     static let maxHistory = 3
     /// Shorter words are not learned from a double-Shift fix (single letters convert along anyway).
     static let minLearnedLength = 2
+    /// Caps Lock words this short still read as acronyms (CSV, ДФС) and keep the all-caps rule.
+    static let maxCapsLockAcronymLength = 3
+    /// Punctuation that may end a line right after a word that converts at Return, in the layout
+    /// the word converts into.
+    static let closingPunctuation: Set<Character> = [".", ",", "!", "?", ";", ":", ")", "…"]
 
     public private(set) var layouts: LayoutPair?
     public var detector: Detector?
@@ -33,7 +40,9 @@ public struct LadEngine: Sendable {
     private var lastConversion: Conversion?
     /// The current word was fixed by hand mid-word, from this layout: it is learned whole at its end.
     private var lessonFromLayoutID: String?
-    private var overflowed = false
+    /// The keys up to the next boundary are not followed: a run too long to be a word, or a word
+    /// another program typed into.
+    private var skipsWord = false
     private var shiftTaps = ShiftTapDetector()
 
     public init(layouts: LayoutPair? = nil, detector: Detector? = nil) {
@@ -74,8 +83,15 @@ public struct LadEngine: Sendable {
         history = []
         lastConversion = nil
         lessonFromLayoutID = nil
-        overflowed = false
+        skipsWord = false
         shiftTaps.interrupt()
+    }
+
+    /// Another program typed into the text (an auto-typed password, a text expander): Lad forgets
+    /// the typing and follows nothing until the next word, since the user may finish this one.
+    public mutating func skipWord() {
+        reset()
+        skipsWord = true
     }
 }
 
@@ -102,14 +118,18 @@ extension LadEngine {
         let fromLayoutID: String
         /// Automatic: the typed word, normalized; turning it back makes it an exception.
         let exception: String?
-        /// By hand: the word this fix taught Lad; turning it back at once forgets it again.
+        /// By hand: the word this fix would teach Lad, learned only once the user types on.
         let taught: String?
+        /// A case fix: the keys as typed, which an undo puts back.
+        var typedStrokes: [KeyStroke]?
     }
 
     private mutating func handleKey(_ keyCode: UInt16, modifiers: Modifiers, isRepeat: Bool) -> EngineOutput {
         shiftTaps.interrupt()
         guard let layouts else { return .pass }
-        guard modifiers.isDisjoint(with: .shortcut), !isRepeat else {
+        let endsLine = keyCode == KeyCode.returnKey || keyCode == KeyCode.keypadEnter
+        // Fn+Return on a laptop is Enter, not a shortcut.
+        guard modifiers.subtracting(endsLine ? .function : []).isDisjoint(with: .shortcut), !isRepeat else {
             reset()
             return .pass
         }
@@ -117,8 +137,12 @@ extension LadEngine {
             deleteBackward(layouts: layouts)
             return .pass
         }
-        if keyCode == KeyCode.returnKey || keyCode == KeyCode.keypadEnter {
-            return finishLine(with: KeyStroke(keyCode: keyCode, shift: modifiers.contains(.shift)), layouts: layouts)
+        // Typing on (or sending the line) after a fix by hand confirms the fix: it is learned now.
+        if endsLine {
+            let lesson = confirmLesson()
+            var output = finishLine(with: KeyStroke(keyCode: keyCode, shift: modifiers.contains(.shift)), layouts: layouts)
+            output.learnedWord = output.learnedWord ?? lesson
+            return output
         }
         let stroke = KeyStroke(keyCode: keyCode, shift: modifiers.contains(.shift), capsLock: modifiers.contains(.capsLock))
         guard KeyCode.typesText(keyCode), let typed = layouts.current.text(for: stroke),
@@ -126,12 +150,15 @@ extension LadEngine {
             reset()
             return .pass
         }
-        lastConversion = nil
+        let lesson = confirmLesson()
+        var output = EngineOutput.pass
         if Self.isWordKey(typed, in: layouts.current) || Self.isWordKey(other, in: layouts.other) {
             append(stroke)
-            return .pass
+        } else {
+            output = endWord(with: stroke, layouts: layouts)
         }
-        return endWord(with: stroke, layouts: layouts)
+        output.learnedWord = output.learnedWord ?? lesson
+        return output
     }
 
     /// A key types part of a word when it types a letter or an apostrophe in either layout: "[" in
@@ -142,9 +169,9 @@ extension LadEngine {
     }
 
     private mutating func append(_ stroke: KeyStroke) {
-        guard !overflowed else { return }
+        guard !skipsWord else { return }
         guard word.count < Self.maxWordLength else {
-            overflowed = true
+            skipsWord = true
             word = []
             history = []
             lessonFromLayoutID = nil
@@ -154,18 +181,21 @@ extension LadEngine {
     }
 
     private mutating func endWord(with boundary: KeyStroke, layouts: LayoutPair) -> EngineOutput {
-        if overflowed {
-            overflowed = false
+        if skipsWord {
+            skipsWord = false
             history = []
             return .pass
         }
         guard !word.isEmpty else {
+            lessonFromLayoutID = nil
             extendTrailing(with: boundary)
             return .pass
         }
         let strokes = word
         word = []
-        let lesson = takeLesson(for: strokes, layouts: layouts)
+        // A word fixed mid-way is learned whole only when it ends at a space, not at a digit or symbol.
+        let lesson = layouts.current.text(for: boundary) == " " ? takeLesson(for: strokes, layouts: layouts) : nil
+        lessonFromLayoutID = nil
         var verdict = verdict(for: strokes, layouts: layouts)
         // Only a space converts right away: punctuation after a word is too often code or a path
         // (src/, jwt-), so the word waits and converts along with the next one.
@@ -187,7 +217,7 @@ extension LadEngine {
     /// "ПРивіт" → "Привіт" in the same layout, when the fixed word is listed. The boundary key (if
     /// any) is suppressed and retyped after the word, like a conversion, so double Shift undoes it.
     private mutating func fixCase(_ strokes: [KeyStroke], boundary: KeyStroke?, layouts: LayoutPair) -> EngineOutput? {
-        guard fixesTwoCapitals, let detector, let language = layouts.current.language,
+        guard isAutomatic, fixesTwoCapitals, let detector, let language = layouts.current.language,
               let typed = layouts.current.text(for: strokes), !exceptions.contains(WordText.normalized(typed)),
               let fixed = CaseFix.twoInitialCapitals(typed, in: language), detector.isListed(fixed, in: language) else {
             return nil
@@ -195,20 +225,38 @@ extension LadEngine {
         let boundaryText = boundary.flatMap { layouts.current.text(for: $0) } ?? ""
         lastConversion = Conversion(
             original: typed + boundaryText, insertedCount: fixed.count + boundaryText.count,
-            fromLayoutID: layouts.current.id, exception: WordText.normalized(typed), taught: nil
+            fromLayoutID: layouts.current.id, exception: WordText.normalized(typed), taught: nil, typedStrokes: strokes
         )
-        history = [TypedWord(strokes: strokes, trailing: boundary.map { [$0] } ?? [], verdict: nil, layoutID: layouts.current.id)]
+        // The word is followed on as it now reads (a later double Shift retypes "Привіт", not
+        // "ПРивіт"); if its keys cannot type that, it is not followed at all.
+        history = Self.strokes(strokes, recasedTo: fixed, in: layouts.current).map { fixedStrokes in
+            [TypedWord(strokes: fixedStrokes, trailing: boundary.map { [$0] } ?? [], verdict: nil, layoutID: layouts.current.id)]
+        } ?? []
         let replacement = Replacement(deleteCount: typed.count, text: fixed + boundaryText, layoutID: layouts.current.id)
         return EngineOutput(suppressesEvent: true, replacement: replacement)
+    }
+
+    /// The same keys with Shift flipped where a letter's case changed, if they type `text`.
+    private static func strokes(_ strokes: [KeyStroke], recasedTo text: String, in table: LayoutTable) -> [KeyStroke]? {
+        let characters = Array(text)
+        guard characters.count == strokes.count else { return nil }
+        let recased = zip(strokes, characters).map { stroke, character in
+            table.text(for: stroke) == String(character)
+                ? stroke : KeyStroke(keyCode: stroke.keyCode, shift: !stroke.shift, capsLock: stroke.capsLock)
+        }
+        return table.text(for: recased) == text ? recased : nil
     }
 
     /// Return or Enter ends the line. A word that converts is retyped and the key pressed again
     /// after it (the app may send the message right away), so nothing of the line is kept for an undo.
     private mutating func finishLine(with key: KeyStroke, layouts: LayoutPair) -> EngineOutput {
         defer { reset() }
-        guard !overflowed, !word.isEmpty else { return .pass }
+        guard !skipsWord else { return .pass }
+        guard !word.isEmpty else {
+            return convertsOnReturn ? convertLastWord(endingLineWith: key, layouts: layouts) : .pass
+        }
         let lesson = takeLesson(for: word, layouts: layouts)
-        let segment = pendingStrokes(layouts: layouts) + word
+        let segment = pendingStrokes(in: history[...], layouts: layouts) + word
         guard convertsOnReturn, verdict(for: word, layouts: layouts) == .convert,
               let original = layouts.current.text(for: segment), let inserted = layouts.other.text(for: segment) else {
             if convertsOnReturn, let fix = fixCase(word, boundary: nil, layouts: layouts)?.replacement {
@@ -222,13 +270,30 @@ extension LadEngine {
         return EngineOutput(suppressesEvent: true, replacement: replacement, learnedWord: lesson)
     }
 
+    /// "ghbdsn/⏎" is «привіт.⏎»: when the line ends in punctuation right after a word, the word
+    /// converts at Return as it would have at a space, the punctuation with it.
+    private mutating func convertLastWord(endingLineWith key: KeyStroke, layouts: LayoutPair) -> EngineOutput {
+        guard let last = history.last, last.verdict == .undecided, last.layoutID == layouts.current.id,
+              let punctuation = layouts.other.text(for: last.trailing),
+              punctuation.allSatisfy(Self.closingPunctuation.contains),
+              verdict(for: last.strokes, layouts: layouts) == .convert else { return .pass }
+        let segment = pendingStrokes(in: history.dropLast(), layouts: layouts) + last.allStrokes
+        guard let original = layouts.current.text(for: segment), let inserted = layouts.other.text(for: segment) else {
+            return .pass
+        }
+        self.layouts = layouts.swapped
+        let replacement = Replacement(deleteCount: original.count, text: inserted, layoutID: layouts.other.id, followUpKey: key)
+        return EngineOutput(suppressesEvent: true, replacement: replacement)
+    }
+
     private func verdict(for strokes: [KeyStroke], layouts: LayoutPair) -> Verdict {
         guard isAutomatic, let typedLanguage = layouts.current.language, let otherLanguage = layouts.other.language,
               let typed = layouts.current.text(for: strokes), let other = layouts.other.text(for: strokes) else { return .keep }
         let normalized = WordText.normalized(typed)
         // On a Mac, Shift with Caps Lock still types capitals: a Caps Lock word is all caps whatever
-        // was meant, so its case is no evidence (GHBDSN typed that way is ПРИВІТ).
-        let capsLocked = strokes.allSatisfy(\.capsLock)
+        // was meant, so its case is no evidence (GHBDSN typed that way is ПРИВІТ). Short ones still
+        // read as acronyms (CSV is no «СІМ»).
+        let capsLocked = strokes.count > Self.maxCapsLockAcronymLength && strokes.allSatisfy(\.capsLock)
         let hasPlainCase = capsLocked || Detector.hasPlainCase(typed, in: typedLanguage)
         if learnedWords.contains(normalized), !exceptions.contains(normalized), hasPlainCase {
             return .convert
@@ -257,12 +322,15 @@ extension LadEngine {
 
     private mutating func deleteBackward(layouts: LayoutPair) {
         lastConversion = nil
-        guard !overflowed else {
+        guard !skipsWord else {
             reset()
             return
         }
         if !word.isEmpty {
             word.removeLast()
+            if word.isEmpty {
+                lessonFromLayoutID = nil
+            }
             return
         }
         // Deleting the boundary after the last word puts the caret back at the word's end.
@@ -285,19 +353,40 @@ extension LadEngine {
     /// After a double-Shift fix in the middle of the word: the whole word as typed in the wrong
     /// layout, learned now that it is complete.
     private mutating func takeLesson(for strokes: [KeyStroke], layouts: LayoutPair) -> String? {
-        guard let fromLayoutID = lessonFromLayoutID else { return nil }
-        lessonFromLayoutID = nil
-        guard fromLayoutID == layouts.other.id, let typed = layouts.other.text(for: strokes) else { return nil }
-        return learn(typed)
+        guard let fromLayoutID = lessonFromLayoutID, fromLayoutID == layouts.other.id,
+              let typed = layouts.other.text(for: strokes), let converted = layouts.current.text(for: strokes),
+              let word = lesson(typed: typed, in: layouts.other, converted: converted, in: layouts.current) else { return nil }
+        learn(word)
+        return word
     }
 
-    /// Adds a typed word to the learned words (it stops being an exception); nil when too short.
-    private mutating func learn(_ typed: String) -> String? {
-        let normalized = WordText.normalized(typed)
-        guard normalized.count >= Self.minLearnedLength else { return nil }
-        learnedWords.insert(normalized)
-        exceptions.remove(normalized)
-        return normalized
+    /// The pending lesson of a fix by hand, learned now that the user typed on.
+    private mutating func confirmLesson() -> String? {
+        defer { lastConversion = nil }
+        guard let word = lastConversion?.taught else { return nil }
+        learn(word)
+        return word
+    }
+
+    /// A fixed word worth learning: long enough, no code token, not a word of the layout it was
+    /// typed in, and a listed word once converted. So keyboard mash, and a password fixed by hand,
+    /// are never learned (or stored).
+    private func lesson(typed: String, in typedTable: LayoutTable, converted: String, in convertedTable: LayoutTable) -> String? {
+        guard let detector, let typedLanguage = typedTable.language, let convertedLanguage = convertedTable.language else {
+            return nil
+        }
+        let word = WordText.normalized(typed)
+        guard word.count >= Self.minLearnedLength,
+              !(typedLanguage == .english && Detector.codeTokens.contains(word)),
+              !detector.isListed(typed, in: typedLanguage),
+              detector.isListed(converted, in: convertedLanguage) else { return nil }
+        return word
+    }
+
+    /// Adds a word to the learned words; it stops being an exception.
+    private mutating func learn(_ word: String) {
+        learnedWords.insert(word)
+        exceptions.remove(word)
     }
 }
 
@@ -307,7 +396,7 @@ extension LadEngine {
     /// The boundary key has not reached the app: it is suppressed and retyped in the other layout
     /// after the word, together with the undecided words right before it that convert along.
     private mutating func convertAutomatically(_ strokes: [KeyStroke], boundary: KeyStroke, layouts: LayoutPair) -> EngineOutput {
-        let segment = pendingStrokes(layouts: layouts) + strokes + [boundary]
+        let segment = pendingStrokes(in: history[...], layouts: layouts) + strokes + [boundary]
         guard let original = layouts.current.text(for: segment), let inserted = layouts.other.text(for: segment),
               let typedBoundary = layouts.current.text(for: boundary) else { return .pass }
         self.layouts = layouts.swapped
@@ -325,12 +414,12 @@ extension LadEngine {
     /// The strokes of the undecided words right before the current one that convert along with it
     /// (nearest first, stopping at the first that does not). Each must be joined to the next by a
     /// space (after at most a couple of punctuation keys: "ghbdsn? zr" is "привіт, як") or a hyphen.
-    private func pendingStrokes(layouts: LayoutPair) -> [KeyStroke] {
+    private func pendingStrokes(in words: ArraySlice<TypedWord>, layouts: LayoutPair) -> [KeyStroke] {
         guard let detector, let typedLanguage = layouts.current.language, let otherLanguage = layouts.other.language else {
             return []
         }
         var strokes: [KeyStroke] = []
-        for pending in history.reversed() {
+        for pending in words.reversed() {
             guard pending.verdict == .undecided, pending.layoutID == layouts.current.id,
                   let joint = layouts.current.text(for: pending.trailing),
                   joint == "-" || (joint.last == " " && !joint.dropLast().contains(" ")),
@@ -357,11 +446,13 @@ extension LadEngine {
             return output
         }
         if let last = history.last, last.layoutID == layouts.current.id {
-            // A word Lad left alone, fixed by hand: Lad converts it on its own from now on.
-            let typed = last.verdict == nil ? nil : layouts.current.text(for: last.strokes)
-            let taught = typed.flatMap { learn($0) }
-            var output = convertByHand(last.allStrokes, layouts: layouts, taught: taught)
-            output.learnedWord = taught
+            // A word Lad left alone, fixed by hand: once the user types on, Lad converts it itself.
+            var taught: String?
+            if last.verdict != nil, let typed = layouts.current.text(for: last.strokes),
+               let converted = layouts.other.text(for: last.strokes) {
+                taught = lesson(typed: typed, in: layouts.current, converted: converted, in: layouts.other)
+            }
+            let output = convertByHand(last.allStrokes, layouts: layouts, taught: taught)
             history = [TypedWord(strokes: last.strokes, trailing: last.trailing, verdict: nil, layoutID: layouts.other.id)]
             return output
         }
@@ -395,11 +486,14 @@ extension LadEngine {
             if switchesBack, last.layoutID == layouts.current.id {
                 last.layoutID = layouts.other.id
             }
+            if let typedStrokes = conversion.typedStrokes {
+                last.strokes = typedStrokes
+            }
             last.verdict = .keep
             history = [last]
         }
         let replacement = Replacement(deleteCount: conversion.insertedCount, text: conversion.original, layoutID: conversion.fromLayoutID)
-        var output = EngineOutput(replacement: replacement)
+        var output = EngineOutput(replacement: replacement, isUndo: true)
         if let exception = conversion.exception {
             // An automatic conversion turned back: never again, even if it was learned.
             exceptions.insert(exception)
@@ -408,11 +502,7 @@ extension LadEngine {
                 output.forgottenWord = exception
             }
         }
-        if let taught = conversion.taught {
-            // A fix by hand turned back at once: it was no lesson.
-            learnedWords.remove(taught)
-            output.forgottenWord = taught
-        }
+        // A fix by hand turned back at once was no lesson; it was never learned.
         return output
     }
 }

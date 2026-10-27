@@ -1,5 +1,5 @@
+import AppKit
 import CoreGraphics
-import Foundation
 import LadCore
 
 /// The session event tap: it sees key presses, modifier changes and clicks before apps do, and may
@@ -61,9 +61,6 @@ final class EventTap {
     }
 
     fileprivate nonisolated static func observe(_ type: CGEventType, _ event: CGEvent) -> Observation {
-        let origin = InputOrigin(
-            processID: event.getIntegerValueField(.eventSourceUnixProcessID), time: ProcessInfo.processInfo.systemUptime
-        )
         let isLads = event.getIntegerValueField(.eventSourceUserData) == KeyboardOutput.marker
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
@@ -71,14 +68,28 @@ final class EventTap {
         case .keyDown where !isLads:
             let keyCode = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
             let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
-            return .input(.keyDown(keyCode: keyCode, modifiers: modifiers(of: event.flags), isRepeat: isRepeat), origin)
+            return .input(.keyDown(keyCode: keyCode, modifiers: modifiers(of: event.flags), isRepeat: isRepeat), origin(of: event))
         case .flagsChanged where !isLads:
+            let origin = origin(of: event)
             return .input(.modifiersChanged(modifiers(of: event.flags), time: origin.time), origin)
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
-            return .input(.reset, origin)
+            return .input(.reset, origin(of: event))
         default:
             return .ignored
         }
+    }
+
+    private nonisolated static func origin(of event: CGEvent) -> InputOrigin {
+        InputOrigin(processID: event.getIntegerValueField(.eventSourceUnixProcessID), time: time(of: event))
+    }
+
+    /// When the event happened, in seconds since startup: its own time stamp, so key presses that
+    /// queue up while the main thread is busy keep their real spacing. Events posted without one
+    /// count from when they arrive.
+    private nonisolated static func time(of event: CGEvent) -> TimeInterval {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard let time = NSEvent(cgEvent: event)?.timestamp, time > 0, time <= now else { return now }
+        return time
     }
 
     private nonisolated static func modifiers(of flags: CGEventFlags) -> Modifiers {

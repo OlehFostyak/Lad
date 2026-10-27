@@ -1,7 +1,7 @@
 import Foundation
 
 /// Where an input event came from: the process that posted it (0 for the keyboard itself, as far as
-/// macOS reports it) and when Lad saw it, in seconds on a monotonic clock.
+/// macOS reports it) and when it happened, in seconds since startup.
 public struct InputOrigin: Sendable, Equatable {
     public let processID: Int64
     public let time: TimeInterval
@@ -13,27 +13,28 @@ public struct InputOrigin: Sendable, Equatable {
 }
 
 /// Tells a program typing for the user (a password manager's auto-type, a text expander) from a
-/// person: programs post key presses faster than any hand.
+/// person: programs keep pressing keys faster than a hand can for long.
 public struct TypingRhythm: Sendable, Equatable {
-    /// Two presses closer than this are not a person's.
-    public static let machineInterval: TimeInterval = 0.008
-    /// This many such quick gaps in a row make a program's burst (three presses).
-    public static let burstLength = 2
+    /// Programs keep every gap between presses under this, even when they pace their keys...
+    public static let machineInterval: TimeInterval = 0.025
+    /// ...this many times in a row (five presses), which hands, even rolling over keys, do not.
+    public static let machineRun = 4
 
     private var lastPress: TimeInterval?
     private var quickGaps = 0
 
     public init() {}
 
-    /// Feeds one key press; true from the third press of a machine-speed burst on.
+    /// Feeds one key press, at the time the keyboard reported it (not when Lad got to it: presses
+    /// queue up while the main thread is busy); true while the presses come at a program's pace.
     public mutating func isMachine(at time: TimeInterval) -> Bool {
         defer { lastPress = time }
-        guard let lastPress, time >= lastPress, time - lastPress < Self.machineInterval else {
+        guard let lastPress, time >= lastPress else {
             quickGaps = 0
             return false
         }
-        quickGaps += 1
-        return quickGaps >= Self.burstLength
+        quickGaps = time - lastPress < Self.machineInterval ? quickGaps + 1 : 0
+        return quickGaps >= Self.machineRun
     }
 }
 
@@ -41,7 +42,7 @@ public struct TypingRhythm: Sendable, Equatable {
 /// trusted only once enough presses came without one (the user's own typing); until then, and on a
 /// system that stamps every event, nothing counts as foreign.
 public struct SourceFilter: Sendable, Equatable {
-    public static let calibrationPresses = 20
+    public static let calibrationPresses = 5
 
     private var unattributedPresses = 0
 

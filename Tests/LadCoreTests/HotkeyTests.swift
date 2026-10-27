@@ -15,14 +15,18 @@ struct HotkeyTests {
         #expect(Hotkey.matching(key(32, [.control, .option])) == .cycleCase)
     }
 
-    @Test("Other modifiers, other keys, repeats and other events are no hotkey")
+    @Test("Other modifiers, other keys and other events are no hotkey")
     func ignoresTheRest() {
         #expect(Hotkey.matching(key(37, [.control])) == nil)
         #expect(Hotkey.matching(key(37, [.control, .option, .shift])) == nil)
         #expect(Hotkey.matching(key(37, [.control, .option, .command])) == nil)
         #expect(Hotkey.matching(key(0, [.control, .option])) == nil)
-        #expect(Hotkey.matching(key(37, [.control, .option], repeating: true)) == nil)
         #expect(Hotkey.matching(.modifiersChanged([.control, .option], time: 0)) == nil)
         #expect(Hotkey.matching(.reset) == nil)
+    }
+
+    @Test("Repeats of a held hotkey match too, so the app in front never gets them")
+    func matchesRepeats() {
+        #expect(Hotkey.matching(key(37, [.control, .option], repeating: true)) == .toggleAutomatic)
     }
 }

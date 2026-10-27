@@ -55,8 +55,12 @@ public enum Transliterator {
         isUkrainianLetter(character) || apostrophes.contains(character)
     }
 
+    /// After a letter, or an apostrophe between letters, a letter is inside a word; after an
+    /// opening quote ('Яна') it starts one.
     private static func isWordStart(_ index: Int, _ characters: [Character]) -> Bool {
-        index == 0 || !isWordCharacter(characters[index - 1])
+        guard index > 0 else { return true }
+        let previous = characters[index - 1]
+        return !isUkrainianLetter(previous) && !(apostrophes.contains(previous) && isInsideWord(index - 1, characters))
     }
 
     private static func isInsideWord(_ index: Int, _ characters: [Character]) -> Bool {
@@ -92,7 +96,8 @@ public enum CaseCycle {
         return text.lowercased()
     }
 
-    /// Every word's first letter capitalized and the rest lowercase; words start after whitespace.
+    /// Every word's first letter capitalized and the rest lowercase. Words start after whitespace
+    /// and opening punctuation ("(hello" → "(Hello"), not after a digit ("2nd").
     static func titleCased(_ text: String) -> String {
         var result = ""
         var atWordStart = true
@@ -102,7 +107,7 @@ public enum CaseCycle {
                 atWordStart = false
             } else {
                 result.append(character)
-                atWordStart = character.isWhitespace || atWordStart && !character.isLetter
+                atWordStart = character.isWhitespace || atWordStart && !character.isNumber
             }
         }
         return result

@@ -26,6 +26,18 @@ struct UsageCounterTests {
         #expect(counter.counts == ["2026-10-27": 2, "2026-10-25": 1])
     }
 
+    @Test("A fix turned back comes off its day")
+    func removesUndoneFixes() {
+        var counter = UsageCounter()
+        counter.record(on: day(27), calendar: calendar)
+        counter.record(on: day(27), calendar: calendar)
+        counter.remove(on: day(27), calendar: calendar)
+        #expect(counter.count(on: day(27), calendar: calendar) == 1)
+        counter.remove(on: day(27), calendar: calendar)
+        counter.remove(on: day(27), calendar: calendar)
+        #expect(counter.counts.isEmpty)
+    }
+
     @Test("Days older than a week drop out")
     func dropsOldDays() {
         var counter = UsageCounter(counts: ["2026-10-01": 9, "2026-10-21": 4, "2026-10-20": 5])

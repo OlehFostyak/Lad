@@ -50,13 +50,14 @@ final class SelectionTransformer {
         self.output = output
     }
 
-    /// Calls `completion` with the edit made, or nil (after a beep) when nothing changed.
-    func apply(_ transform: @escaping Transform, completion: @escaping (SelectionEdit?) -> Void) {
+    /// Calls `completion` with the edit made, or nil (after a beep) when nothing changed. Without
+    /// `allowsPasteboard`, apps that do not expose their selection are left alone.
+    func apply(_ transform: @escaping Transform, allowsPasteboard: Bool, completion: @escaping (SelectionEdit?) -> Void) {
         guard !isBusy else { return }
         isBusy = true
         Task {
             defer { isBusy = false }
-            let edit = await rewriteSelection(with: transform)
+            let edit = await rewriteSelection(with: transform, allowsPasteboard: allowsPasteboard)
             if edit == nil {
                 NSSound.beep()
             }
@@ -75,7 +76,7 @@ final class SelectionTransformer {
         }
     }
 
-    private func rewriteSelection(with transform: Transform) async -> SelectionEdit? {
+    private func rewriteSelection(with transform: Transform, allowsPasteboard: Bool) async -> SelectionEdit? {
         guard !IsSecureEventInputEnabled() else { return nil }
         switch Self.focusedSelection() {
         case .secure, .empty:
@@ -87,14 +88,17 @@ final class SelectionTransformer {
             case .success:
                 Self.select(edit.text, from: range, in: element)
                 return edit
-            case .cannotComplete where Self.selectedText(of: element) != text:
-                // The app answered late but took the new text; rewriting again would double it.
-                return edit
+            case .cannotComplete:
+                // The app answered late. If it took the new text, rewriting again would double it;
+                // if it cannot tell what its selection is now, Lad leaves it at that.
+                guard let selected = Self.selectedText(of: element) else { return nil }
+                if selected != text { return edit }
+                return allowsPasteboard ? await rewriteThroughPasteboard(with: transform) : nil
             default:
-                return await rewriteThroughPasteboard(with: transform)
+                return allowsPasteboard ? await rewriteThroughPasteboard(with: transform) : nil
             }
         case .unknown:
-            return await rewriteThroughPasteboard(with: transform)
+            return allowsPasteboard ? await rewriteThroughPasteboard(with: transform) : nil
         }
     }
 

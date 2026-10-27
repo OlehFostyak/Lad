@@ -26,6 +26,7 @@ final class PanelModel: ObservableObject {
     @Published private(set) var fixesToday = 0
     /// macOS's own per-document switching is on, so Lad's memory of layouts per app rests.
     @Published private(set) var systemSwitchesPerDocument = false
+    @Published private(set) var rememberedAppCount = 0
 
     @Published var isAutomatic = true {
         didSet { apply { controller.setAutomatic(isAutomatic) } }
@@ -79,6 +80,7 @@ final class PanelModel: ObservableObject {
         showsLayoutHint = controller.showsLayoutHint
         (fixesThisWeek, fixesToday) = controller.fixCounts
         systemSwitchesPerDocument = controller.systemSwitchesPerDocument
+        rememberedAppCount = controller.rememberedAppCount
         exceptions = controller.exceptions
         learnedWords = controller.learnedWords
         playsSound = settings.playsSound
@@ -94,6 +96,11 @@ final class PanelModel: ObservableObject {
 
     func clearExceptions() {
         controller.clearExceptions()
+        refresh()
+    }
+
+    func forgetAppLayouts() {
+        controller.forgetAppLayouts()
         refresh()
     }
 

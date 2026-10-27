@@ -19,10 +19,12 @@ public enum Hotkey: Sendable, Equatable, CaseIterable {
         }
     }
 
-    /// The shortcut a key press is, if any; Caps Lock does not matter, key repeats do not count.
+    /// The shortcut a key press is, if any; Caps Lock does not matter. Key repeats of a held
+    /// shortcut match too: they must not reach the app either, though only the first press acts.
     public static func matching(_ event: InputEvent) -> Hotkey? {
-        guard case let .keyDown(keyCode, modifiers, isRepeat) = event, !isRepeat,
-              modifiers.subtracting(.capsLock) == Self.modifiers else { return nil }
+        guard case let .keyDown(keyCode, modifiers, _) = event, modifiers.subtracting(.capsLock) == Self.modifiers else {
+            return nil
+        }
         return allCases.first { $0.keyCode == keyCode }
     }
 }

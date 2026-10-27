@@ -27,20 +27,32 @@ final class LayoutHint {
         panel.contentView = NSHostingView(rootView: HintBadge(content: content))
     }
 
-    /// Shows `text`, yellow and blue for Ukrainian, dark otherwise.
+    /// Shows `text`, yellow and blue for Ukrainian, dark otherwise. The caret is looked up off the
+    /// main thread: a slow app must not hold up the event tap.
     func show(_ text: String, ukrainian: Bool) {
+        hideTask?.cancel()
+        hideTask = Task { [weak self] in
+            let caret = await Task.detached(priority: .userInitiated) { Self.caretInAccessibilityCoordinates() }.value
+            guard let self, !Task.isCancelled else { return }
+            present(text, ukrainian: ukrainian, caret: caret)
+            try? await Task.sleep(for: Self.visibleFor)
+            guard !Task.isCancelled else { return }
+            fadeOut()
+        }
+    }
+
+    private func present(_ text: String, ukrainian: Bool, caret: CGRect?) {
         content.text = text
         content.isUkrainian = ukrainian
         let size = panel.contentView?.fittingSize ?? NSSize(width: 40, height: 22)
-        panel.setFrame(NSRect(origin: Self.origin(for: size), size: size), display: true)
-        panel.alphaValue = 1
-        panel.orderFrontRegardless()
-        hideTask?.cancel()
-        hideTask = Task { [weak self] in
-            try? await Task.sleep(for: Self.visibleFor)
-            guard !Task.isCancelled else { return }
-            self?.fadeOut()
+        panel.setFrame(NSRect(origin: Self.origin(for: size, caret: caret), size: size), display: true)
+        // Through the animator, so a fade still running from the last hint stops instead of
+        // hiding this one.
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            panel.animator().alphaValue = 1
         }
+        panel.orderFrontRegardless()
     }
 
     private func fadeOut() {
@@ -56,16 +68,17 @@ final class LayoutHint {
     }
 
     /// Below the caret, else below and right of the mouse pointer.
-    private static func origin(for size: NSSize) -> NSPoint {
-        if let caret = caretRect() {
-            return NSPoint(x: caret.minX, y: caret.minY - size.height - gap)
+    private static func origin(for size: NSSize, caret: CGRect?) -> NSPoint {
+        // Accessibility measures from the top left of the primary screen, AppKit from its bottom left.
+        if let caret, let primary = NSScreen.screens.first {
+            return NSPoint(x: caret.minX, y: primary.frame.maxY - caret.maxY - size.height - gap)
         }
         let mouse = NSEvent.mouseLocation
         return NSPoint(x: mouse.x + 3 * gap, y: mouse.y - size.height - 3 * gap)
     }
 
-    /// The caret of the focused text, in AppKit screen coordinates, from Accessibility.
-    private static func caretRect() -> NSRect? {
+    /// The caret of the focused text from Accessibility, in its top-left screen coordinates.
+    private nonisolated static func caretInAccessibilityCoordinates() -> CGRect? {
         var focused: CFTypeRef?
         guard AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute as CFString, &focused) == .success,
               let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
@@ -77,10 +90,8 @@ final class LayoutHint {
         guard AXUIElementCopyParameterizedAttributeValue(element, kAXBoundsForRangeParameterizedAttribute as CFString, range, &bounds) == .success,
               let bounds, CFGetTypeID(bounds) == AXValueGetTypeID() else { return nil }
         var rect = CGRect.zero
-        guard AXValueGetValue(bounds as! AXValue, .cgRect, &rect), rect.height > 0,
-              let primary = NSScreen.screens.first else { return nil }
-        // Accessibility measures from the top left of the primary screen, AppKit from its bottom left.
-        return NSRect(x: rect.minX, y: primary.frame.maxY - rect.maxY, width: rect.width, height: rect.height)
+        guard AXValueGetValue(bounds as! AXValue, .cgRect, &rect), rect.height > 0 else { return nil }
+        return rect
     }
 }
 

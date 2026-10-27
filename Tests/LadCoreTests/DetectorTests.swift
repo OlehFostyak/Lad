@@ -24,7 +24,7 @@ struct DetectorTests {
 
     @Test("English words and code typed in the U.S. layout never convert alone", arguments: [
         "hello", "world", "git", "commit", "the", "ls", "cd", "npm", "kubectl", "docker", "here",
-        "README", "RFC", "iPhone", "useState",
+        "README", "RFC", "iPhone", "useState", "src", "csv", "jwt",
     ])
     func keepsEnglish(typed: String) {
         #expect(verdict(typedInUS: typed) != .convert)

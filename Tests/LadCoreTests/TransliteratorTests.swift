@@ -29,6 +29,13 @@ struct TransliteratorTests {
         #expect(Transliterator.ukrainianToLatin("'цитата'") == "'tsytata'")
     }
 
+    @Test("An apostrophe used as an opening quote starts a word")
+    func readsOpeningQuotes() {
+        #expect(Transliterator.ukrainianToLatin("'Яна'") == "'Yana'")
+        #expect(Transliterator.ukrainianToLatin("кажу 'Юля'") == "kazhu 'Yulia'")
+        #expect(Transliterator.ukrainianToLatin("п'ять 'ялинок'") == "piat 'yalynok'")
+    }
+
     @Test("Text without Ukrainian letters is not transliterated")
     func needsUkrainian() {
         #expect(Transliterator.ukrainianToLatin("hello 123") == nil)
@@ -52,5 +59,10 @@ struct CaseCycleTests {
         #expect(CaseCycle.next("ПО-УКРАЇНСЬКИ") == "По-українськи")
         #expect(CaseCycle.next("A") == "a")
         #expect(CaseCycle.next("123 !") == nil)
+    }
+
+    @Test("Title case starts words after brackets and quotes, not after digits")
+    func titleCasesWordStarts() {
+        #expect(CaseCycle.next("2ND (HELLO) «СВІТ»") == "2nd (Hello) «Світ»")
     }
 }
