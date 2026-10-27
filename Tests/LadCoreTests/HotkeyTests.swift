@@ -7,10 +7,12 @@ struct HotkeyTests {
         .keyDown(keyCode: keyCode, modifiers: modifiers, isRepeat: repeating)
     }
 
-    @Test("Control-Option-L toggles automatic switching, Caps Lock or not")
-    func matchesToggle() {
+    @Test("Control-Option-L, T and U, Caps Lock or not")
+    func matchesHotkeys() {
         #expect(Hotkey.matching(key(37, [.control, .option])) == .toggleAutomatic)
         #expect(Hotkey.matching(key(37, [.control, .option, .capsLock])) == .toggleAutomatic)
+        #expect(Hotkey.matching(key(17, [.control, .option])) == .transliterate)
+        #expect(Hotkey.matching(key(32, [.control, .option])) == .cycleCase)
     }
 
     @Test("Other modifiers, other keys, repeats and other events are no hotkey")

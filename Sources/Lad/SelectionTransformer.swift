@@ -3,11 +3,19 @@ import ApplicationServices
 import Carbon
 import LadCore
 
-/// Converts the selected text. Through Accessibility when the app exposes its selection (the
-/// pasteboard is never touched); otherwise through the pasteboard: copy, convert, paste, then put
-/// back what it held, with checks that the app, the focus and the pasteboard did not change meanwhile.
-/// The work runs after the event tap callback returns, so typing never waits for it.
-final class SelectionConverter {
+/// A change to the selected text: its new text and, for a layout conversion, the layout it is in now.
+struct SelectionEdit: Sendable, Equatable {
+    let text: String
+    let layoutID: String?
+}
+
+/// Rewrites the selected text with a pure function (convert the layout, transliterate, cycle the
+/// case). Through Accessibility when the app exposes its selection: the pasteboard is never
+/// touched and the new text stays selected, so the shortcut can be pressed again. Otherwise through
+/// the pasteboard: copy, rewrite, paste, then put back what it held, with checks that the app, the
+/// focus and the pasteboard did not change meanwhile. The work runs after the event tap callback
+/// returns, so typing never waits for it.
+final class SelectionTransformer {
     private static let maxLength = 5_000
     private static let copyPoll: Duration = .milliseconds(10)
     private static let copyTimeout: Duration = .milliseconds(500)
@@ -20,6 +28,7 @@ final class SelectionConverter {
         concealedType,
     ]
 
+    typealias Transform = (String) -> SelectionEdit?
     /// Pasteboard items with their types in the original order (apps read the first type they know).
     private typealias Snapshot = [[(type: NSPasteboard.PasteboardType, data: Data)]]
 
@@ -34,28 +43,28 @@ final class SelectionConverter {
 
     private let output: KeyboardOutput
     private var isBusy = false
-    /// The pasteboard to put back, and its change count right after Lad wrote the converted text.
+    /// The pasteboard to put back, and its change count right after Lad wrote the new text.
     private var pendingRestore: (snapshot: Snapshot, changeCount: Int)?
 
     init(output: KeyboardOutput) {
         self.output = output
     }
 
-    /// Calls `completion` with the layout the text is in now, or nil when nothing was converted.
-    func convert(layouts: LayoutPair, completion: @escaping (String?) -> Void) {
+    /// Calls `completion` with the edit made, or nil (after a beep) when nothing changed.
+    func apply(_ transform: @escaping Transform, completion: @escaping (SelectionEdit?) -> Void) {
         guard !isBusy else { return }
         isBusy = true
         Task {
             defer { isBusy = false }
-            let layoutID = await convertSelection(layouts: layouts)
-            if layoutID == nil {
+            let edit = await rewriteSelection(with: transform)
+            if edit == nil {
                 NSSound.beep()
             }
-            completion(layoutID)
+            completion(edit)
         }
     }
 
-    /// Puts the pasteboard back now if a conversion is between ⌘V and the restore (Lad is quitting).
+    /// Puts the pasteboard back now if a rewrite is between ⌘V and the restore (Lad is quitting).
     func finishPendingRestore() {
         guard let pending = pendingRestore else { return }
         pendingRestore = nil
@@ -66,28 +75,30 @@ final class SelectionConverter {
         }
     }
 
-    private func convertSelection(layouts: LayoutPair) async -> String? {
+    private func rewriteSelection(with transform: Transform) async -> SelectionEdit? {
         guard !IsSecureEventInputEnabled() else { return nil }
         switch Self.focusedSelection() {
         case .secure, .empty:
             return nil
         case let .text(text, element):
-            guard text.count <= Self.maxLength, let converted = TextConverter.convert(text, layouts: layouts) else { return nil }
-            switch AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, converted.text as CFString) {
+            guard text.count <= Self.maxLength, let edit = transform(text) else { return nil }
+            let range = Self.selectedRange(of: element)
+            switch AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, edit.text as CFString) {
             case .success:
-                return converted.layoutID
+                Self.select(edit.text, from: range, in: element)
+                return edit
             case .cannotComplete where Self.selectedText(of: element) != text:
-                // The app answered late but took the new text; converting again would turn it back.
-                return converted.layoutID
+                // The app answered late but took the new text; rewriting again would double it.
+                return edit
             default:
-                return await convertThroughPasteboard(layouts: layouts)
+                return await rewriteThroughPasteboard(with: transform)
             }
         case .unknown:
-            return await convertThroughPasteboard(layouts: layouts)
+            return await rewriteThroughPasteboard(with: transform)
         }
     }
 
-    private func convertThroughPasteboard(layouts: LayoutPair) async -> String? {
+    private func rewriteThroughPasteboard(with transform: Transform) async -> SelectionEdit? {
         let pasteboard = NSPasteboard.general
         // Without read access (macOS asks or denies), Lad could not put the pasteboard back: it stays away.
         guard pasteboard.accessBehavior != .alwaysDeny, let saved = Self.snapshot(of: pasteboard) else { return nil }
@@ -100,18 +111,18 @@ final class SelectionConverter {
         // whole line with its line break when nothing is selected; pasting it back would duplicate it.
         guard !(pasteboard.types ?? []).contains(Self.concealedType),
               let copied = pasteboard.string(forType: .string), !copied.isEmpty, copied.count <= Self.maxLength,
-              !copied.hasSuffix("\n"), let converted = TextConverter.convert(copied, layouts: layouts),
+              !copied.hasSuffix("\n"), let edit = transform(copied),
               NSWorkspace.shared.frontmostApplication?.processIdentifier == frontProcess,
               !IsSecureEventInputEnabled() else {
             Self.restore(saved, to: pasteboard)
             return nil
         }
-        Self.put(converted.text, on: pasteboard)
+        Self.put(edit.text, on: pasteboard)
         pendingRestore = (saved, pasteboard.changeCount)
         output.press(KeyCode.v, flags: .maskCommand)
         try? await Task.sleep(for: Self.pasteWait)
         finishPendingRestore()
-        return converted.layoutID
+        return edit
     }
 
     /// The focused element's selection, read through Accessibility.
@@ -134,6 +145,22 @@ final class SelectionConverter {
         var selected: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXSelectedTextAttribute as CFString, &selected) == .success else { return nil }
         return selected as? String
+    }
+
+    private static func selectedRange(of element: AXUIElement) -> CFRange? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        var range = CFRange()
+        return AXValueGetValue(value as! AXValue, .cfRange, &range) ? range : nil
+    }
+
+    /// Selects the new text where the old one started (best effort: some apps ignore it).
+    private static func select(_ text: String, from range: CFRange?, in element: AXUIElement) {
+        guard let range else { return }
+        var newRange = CFRange(location: range.location, length: text.utf16.count)
+        guard let value = AXValueCreate(.cfRange, &newRange) else { return }
+        AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, value)
     }
 
     private static func waitForChange(of pasteboard: NSPasteboard, from changeCount: Int) async -> Bool {

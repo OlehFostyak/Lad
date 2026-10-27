@@ -3,6 +3,10 @@
 public enum Hotkey: Sendable, Equatable, CaseIterable {
     /// ⌃⌥L: automatic switching on or off.
     case toggleAutomatic
+    /// ⌃⌥T: the selected Ukrainian text in Latin letters.
+    case transliterate
+    /// ⌃⌥U: the selected text lowercase → UPPERCASE → Title Case.
+    case cycleCase
 
     public static let modifiers: Modifiers = [.control, .option]
 
@@ -10,6 +14,8 @@ public enum Hotkey: Sendable, Equatable, CaseIterable {
     public var keyCode: UInt16 {
         switch self {
         case .toggleAutomatic: 37
+        case .transliterate: 17
+        case .cycleCase: 32
         }
     }
 

@@ -24,7 +24,7 @@ final class TypingController {
     private let settings: Settings
     private let inputSources: InputSources
     private let output = KeyboardOutput()
-    private let selection: SelectionConverter
+    private let selection: SelectionTransformer
     private let focus = FocusObserver()
     private let sound = NSSound(named: "Pop")
     private let hint = LayoutHint()
@@ -36,7 +36,7 @@ final class TypingController {
     init(settings: Settings, inputSources: InputSources) {
         self.settings = settings
         self.inputSources = inputSources
-        self.selection = SelectionConverter(output: output)
+        self.selection = SelectionTransformer(output: output)
         self.appLayouts = LayoutMemory(settings.appLayouts)
         self.usage = UsageCounter(counts: settings.usageCounts)
         engine.isAutomatic = settings.isAutomatic
@@ -153,7 +153,7 @@ final class TypingController {
         onStateChange?()
     }
 
-    /// Lad is quitting: put back a pasteboard a selection conversion borrowed.
+    /// Lad is quitting: put back a pasteboard a selection rewrite borrowed.
     func prepareForTermination() {
         selection.finishPendingRestore()
     }
@@ -185,12 +185,8 @@ final class TypingController {
             }
         }
         if result.convertsSelection, let layouts = engine.layouts {
-            selection.convert(layouts: layouts) { [weak self] layoutID in
-                guard let self, let layoutID else { return }
-                select(layoutID)
-                engine.currentLayoutDidChange(to: layoutID)
-                showHint(for: layoutID)
-                countFix()
+            rewriteSelection { text in
+                TextConverter.convert(text, layouts: layouts).map { SelectionEdit(text: $0.text, layoutID: $0.layoutID) }
             }
         }
         return result.suppressesEvent
@@ -206,6 +202,23 @@ final class TypingController {
         case .toggleAutomatic:
             setAutomatic(!engine.isAutomatic)
             showHint(engine.isAutomatic ? "Lad увімк." : "Lad вимк.", ukrainian: false)
+        case .transliterate:
+            rewriteSelection { Transliterator.ukrainianToLatin($0).map { SelectionEdit(text: $0, layoutID: nil) } }
+        case .cycleCase:
+            rewriteSelection { CaseCycle.next($0).map { SelectionEdit(text: $0, layoutID: nil) } }
+        }
+    }
+
+    /// Rewrites the selection; a layout conversion also switches the layout.
+    private func rewriteSelection(_ transform: @escaping SelectionTransformer.Transform) {
+        engine.reset()
+        selection.apply(transform) { [weak self] edit in
+            guard let self, let edit else { return }
+            countFix()
+            guard let layoutID = edit.layoutID else { return }
+            select(layoutID)
+            engine.currentLayoutDidChange(to: layoutID)
+            showHint(for: layoutID)
         }
     }
 

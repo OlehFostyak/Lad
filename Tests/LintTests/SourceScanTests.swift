@@ -84,7 +84,7 @@ struct SourceScanTests {
         let rules: [(api: String, files: Set<String>)] = [
             ("UserDefaults", ["Settings.swift"]),
             ("contentsOf", ["DictionaryLoader.swift"]),
-            ("NSPasteboard", ["SelectionConverter.swift"]),
+            ("NSPasteboard", ["SelectionTransformer.swift"]),
             ("FileManager", []),
             (".write(", []),
             ("createFile", []),
