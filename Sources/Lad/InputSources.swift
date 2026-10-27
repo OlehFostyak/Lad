@@ -39,4 +39,6 @@ final class InputSources {
     }
 
     var currentID: String? { SystemLayouts.currentID() }
+
+    var enabledIDs: Set<String> { Set(SystemLayouts.enabled().map(\.id)) }
 }

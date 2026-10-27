@@ -67,6 +67,13 @@ struct PanelView: View {
             SwitchRow(title: "Автоматичне перемикання", detail: "Виправляти слово на пробілі", isOn: $model.isAutomatic)
             SwitchRow(title: "Виправляти й на Enter", detail: "Перед відправкою повідомлення", isOn: $model.convertsOnReturn)
             SwitchRow(title: "Виправляти ДВі великі", detail: "«ПРивіт» → «Привіт»", isOn: $model.fixesTwoCapitals)
+            SwitchRow(
+                title: "Розкладка для кожної програми",
+                detail: model.systemSwitchesPerDocument
+                    ? "Вимкни в macOS «Автоматично перемикати джерело вводу документа»"
+                    : "Програма отримує ту розкладку, що була в ній востаннє",
+                isOn: $model.remembersAppLayouts
+            )
             SwitchRow(title: "Звук при виправленні", detail: nil, isOn: $model.playsSound)
             SwitchRow(title: "Запускати разом із macOS", detail: nil, isOn: $model.launchesAtLogin)
             if model.loginNeedsApproval {

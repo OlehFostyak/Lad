@@ -22,6 +22,8 @@ final class PanelModel: ObservableObject {
     /// Most recent first.
     @Published private(set) var learnedWords: [String] = []
     @Published private(set) var loginNeedsApproval = false
+    /// macOS's own per-document switching is on, so Lad's memory of layouts per app rests.
+    @Published private(set) var systemSwitchesPerDocument = false
 
     @Published var isAutomatic = true {
         didSet { apply { controller.setAutomatic(isAutomatic) } }
@@ -31,6 +33,9 @@ final class PanelModel: ObservableObject {
     }
     @Published var fixesTwoCapitals = true {
         didSet { apply { controller.setFixesTwoCapitals(fixesTwoCapitals) } }
+    }
+    @Published var remembersAppLayouts = true {
+        didSet { apply { controller.setRemembersAppLayouts(remembersAppLayouts) } }
     }
     @Published var playsSound = false {
         didSet { apply { settings.playsSound = playsSound } }
@@ -65,6 +70,8 @@ final class PanelModel: ObservableObject {
         isAutomatic = controller.isAutomatic
         convertsOnReturn = controller.convertsOnReturn
         fixesTwoCapitals = controller.fixesTwoCapitals
+        remembersAppLayouts = controller.remembersAppLayouts
+        systemSwitchesPerDocument = controller.systemSwitchesPerDocument
         exceptions = controller.exceptions
         learnedWords = controller.learnedWords
         playsSound = settings.playsSound

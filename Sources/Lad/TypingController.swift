@@ -18,6 +18,8 @@ final class TypingController {
     private var engine = LadEngine()
     /// The app in front (never Lad itself), whose focus changes reset the typing.
     private var frontProcessID: pid_t?
+    private var frontBundleID: String?
+    private var appLayouts: LayoutMemory
     private let settings: Settings
     private let inputSources: InputSources
     private let output = KeyboardOutput()
@@ -33,6 +35,7 @@ final class TypingController {
         self.settings = settings
         self.inputSources = inputSources
         self.selection = SelectionConverter(output: output)
+        self.appLayouts = LayoutMemory(settings.appLayouts)
         engine.isAutomatic = settings.isAutomatic
         engine.convertsOnReturn = settings.convertsOnReturn
         engine.fixesTwoCapitals = settings.fixesTwoCapitals
@@ -43,7 +46,17 @@ final class TypingController {
         focus.onFocusChange = { [weak self] in self?.engine.reset() }
         observeWorkspace()
         frontProcessID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        frontBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         refreshLayouts()
+    }
+
+    var remembersAppLayouts: Bool { settings.remembersAppLayouts }
+    /// macOS switches input sources per document itself, which would fight Lad's memory.
+    var systemSwitchesPerDocument: Bool { settings.systemSwitchesPerDocument }
+
+    func setRemembersAppLayouts(_ remembers: Bool) {
+        settings.remembersAppLayouts = remembers
+        onStateChange?()
     }
 
     var layouts: LayoutPair? { engine.layouts }
@@ -192,12 +205,34 @@ final class TypingController {
 
     private func layoutDidChange(to layoutID: String?) {
         guard let layoutID else { return }
+        rememberLayout(layoutID)
         if let layouts = engine.layouts, layouts.current.id == layoutID || layouts.other.id == layoutID {
             engine.currentLayoutDidChange(to: layoutID)
             onStateChange?()
         } else {
             refreshLayouts()
         }
+    }
+
+    private var isRememberingLayouts: Bool {
+        settings.remembersAppLayouts && !settings.systemSwitchesPerDocument
+    }
+
+    /// The layout now in use belongs to the app in front, whoever switched it.
+    private func rememberLayout(_ layoutID: String) {
+        guard isRememberingLayouts, let bundleID = frontBundleID else { return }
+        appLayouts.remember(layoutID, for: bundleID)
+        settings.appLayouts = appLayouts.layouts
+    }
+
+    /// Brings back the layout last used in the app that came to the front.
+    private func restoreLayout(for bundleID: String?) {
+        guard isRememberingLayouts, let bundleID,
+              let layoutID = appLayouts.layoutToRestore(
+                  for: bundleID, current: inputSources.currentID, enabled: inputSources.enabledIDs
+              ),
+              inputSources.select(layoutID) else { return }
+        engine.currentLayoutDidChange(to: layoutID)
     }
 
     private func refreshLayouts() {
@@ -228,7 +263,9 @@ final class TypingController {
         // Lad's own panel does not count as switching apps.
         guard bundleID != Bundle.main.bundleIdentifier else { return }
         frontProcessID = processID
+        frontBundleID = bundleID
         focus.observe(processID: processID)
+        restoreLayout(for: bundleID)
         // Apps can keep their own input source: re-read it rather than trust the engine's.
         if inputSources.currentID != engine.layouts?.current.id {
             refreshLayouts()

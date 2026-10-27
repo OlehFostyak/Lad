@@ -20,6 +20,8 @@ final class Settings {
         static let automatic = "automaticSwitching"
         static let convertsOnReturn = "convertsOnReturn"
         static let fixesTwoCapitals = "fixesTwoCapitals"
+        static let remembersAppLayouts = "remembersAppLayouts"
+        static let appLayouts = "appLayouts"
         static let exceptions = "exceptions"
         static let learnedWords = "learnedWords"
         static let playsSound = "playsSound"
@@ -37,7 +39,7 @@ final class Settings {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [
-            Key.automatic: true, Key.convertsOnReturn: true, Key.fixesTwoCapitals: true,
+            Key.automatic: true, Key.convertsOnReturn: true, Key.fixesTwoCapitals: true, Key.remembersAppLayouts: true,
             Key.iconStyle: IconStyle.keyboard.rawValue,
         ])
         defaults.removeObject(forKey: Key.removedExcludedApps)
@@ -56,6 +58,24 @@ final class Settings {
     var fixesTwoCapitals: Bool {
         get { defaults.bool(forKey: Key.fixesTwoCapitals) }
         set { defaults.set(newValue, forKey: Key.fixesTwoCapitals) }
+    }
+
+    var remembersAppLayouts: Bool {
+        get { defaults.bool(forKey: Key.remembersAppLayouts) }
+        set { defaults.set(newValue, forKey: Key.remembersAppLayouts) }
+    }
+
+    /// Bundle ID → input source ID of the layout last used in the app.
+    var appLayouts: [String: String] {
+        get { (defaults.dictionary(forKey: Key.appLayouts) as? [String: String]) ?? [:] }
+        set { defaults.set(newValue, forKey: Key.appLayouts) }
+    }
+
+    /// macOS's own "Automatically switch to a document's input source" (Keyboard › Input Sources),
+    /// which would fight Lad's memory of layouts per app.
+    var systemSwitchesPerDocument: Bool {
+        let properties = UserDefaults(suiteName: "com.apple.HIToolbox")?.dictionary(forKey: "AppleGlobalTextInputProperties")
+        return (properties?["TextInputGlobalPropertyPerContextInput"] as? Bool) ?? false
     }
 
     var playsSound: Bool {
