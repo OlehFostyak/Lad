@@ -5,17 +5,13 @@ struct PanelView: View {
     @ObservedObject var model: PanelModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             header
             problem
-            Divider()
-            switches
-            Divider()
-            iconPicker
-            Label("Двічі Shift: виправити останнє слово, скасувати виправлення або перекласти виділене.", systemImage: "shift")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            PanelSection(title: "Виправлення") { fixes }
+            PanelSection(title: "Розкладка") { layout }
+            PanelSection(title: "Інше") { other }
+            PanelSection(title: "Хоткеї") { hotkeys }
             lists
             Divider()
             footer
@@ -62,27 +58,43 @@ struct PanelView: View {
         }
     }
 
-    private var switches: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SwitchRow(title: "Автоматичне перемикання", detail: "Виправляти слово на пробілі", isOn: $model.isAutomatic)
-            SwitchRow(title: "Виправляти й на Enter", detail: "Перед відправкою повідомлення", isOn: $model.convertsOnReturn)
-            SwitchRow(title: "Виправляти ДВі великі", detail: "«ПРивіт» → «Привіт»", isOn: $model.fixesTwoCapitals)
-            SwitchRow(
-                title: "Розкладка для кожної програми",
-                detail: model.systemSwitchesPerDocument
-                    ? "Вимкни в macOS «Автоматично перемикати джерело вводу документа»"
-                    : "Програма отримує ту розкладку, що була в ній востаннє",
-                isOn: $model.remembersAppLayouts
-            )
-            SwitchRow(title: "Показувати розкладку біля курсора", detail: "UA / EN на мить, коли Lad перемикає", isOn: $model.showsLayoutHint)
-            SwitchRow(title: "Звук при виправленні", detail: nil, isOn: $model.playsSound)
-            SwitchRow(title: "Запускати разом із macOS", detail: nil, isOn: $model.launchesAtLogin)
-            if model.loginNeedsApproval {
-                Button("Підтвердь автозапуск у Login Items…", action: model.openLoginItems)
-                    .buttonStyle(.link)
-                    .font(.caption)
-            }
+    @ViewBuilder
+    private var fixes: some View {
+        SwitchRow(title: "Автоматичне перемикання", detail: "Виправляти слово на пробілі", isOn: $model.isAutomatic)
+        SwitchRow(title: "Виправляти й на Enter", detail: "Перед відправкою повідомлення", isOn: $model.convertsOnReturn)
+        SwitchRow(title: "Виправляти ДВі великі", detail: "«ПРивіт» → «Привіт»", isOn: $model.fixesTwoCapitals)
+    }
+
+    @ViewBuilder
+    private var layout: some View {
+        SwitchRow(
+            title: "Розкладка для кожної програми",
+            detail: model.systemSwitchesPerDocument
+                ? "Вимкни в macOS «Автоматично перемикати джерело вводу документа»"
+                : "Програма отримує ту розкладку, що була в ній востаннє",
+            isOn: $model.remembersAppLayouts
+        )
+        SwitchRow(title: "Показувати розкладку біля курсора", detail: "UA / EN на мить, коли Lad перемикає", isOn: $model.showsLayoutHint)
+        iconPicker
+    }
+
+    @ViewBuilder
+    private var other: some View {
+        SwitchRow(title: "Звук при виправленні", detail: nil, isOn: $model.playsSound)
+        SwitchRow(title: "Запускати разом із macOS", detail: nil, isOn: $model.launchesAtLogin)
+        if model.loginNeedsApproval {
+            Button("Підтвердь автозапуск у Login Items…", action: model.openLoginItems)
+                .buttonStyle(.link)
+                .font(.caption)
         }
+    }
+
+    @ViewBuilder
+    private var hotkeys: some View {
+        HotkeyRow(keys: "⇧⇧", action: "виправити слово, скасувати, перекласти виділене")
+        HotkeyRow(keys: "⌃⌥L", action: "автоперемикання увімк. / вимк.")
+        HotkeyRow(keys: "⌃⌥T", action: "виділене латиницею (Олег → Oleh)")
+        HotkeyRow(keys: "⌃⌥U", action: "регістр виділеного: малі → ВЕЛИКІ → З Великої")
     }
 
     private var iconPicker: some View {
@@ -120,7 +132,7 @@ struct PanelView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("За тиждень виправлено \(model.fixesThisWeek) · сьогодні \(model.fixesToday)").font(.caption)
                 Text("Lad \(model.version)").font(.caption2).foregroundStyle(.secondary)
-                Text("Без мережі. Набране не зберігається, крім твоїх винятків.")
+                Text("Без мережі. Набраний текст не зберігається, крім твоїх списків слів.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -169,6 +181,38 @@ private struct SwitchRow: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
+        }
+    }
+}
+
+/// A titled group of rows.
+private struct PanelSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title.uppercased())
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            content
+        }
+    }
+}
+
+private struct HotkeyRow: View {
+    let keys: String
+    let action: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(keys)
+                .font(.system(.caption, design: .monospaced).weight(.semibold))
+                .frame(width: 40, alignment: .leading)
+            Text(action)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
