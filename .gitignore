@@ -1,0 +1,9 @@
+.build/
+.swiftpm/
+*.xcodeproj
+xcuserdata/
+.DS_Store
+# Downloaded dictionary sources (make dictionaries fetches them again).
+tools/.cache/
+# Intermediate icon renders (make icon).
+Resources/AppIcon.iconset/
