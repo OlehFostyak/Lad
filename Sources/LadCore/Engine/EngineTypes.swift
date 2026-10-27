@@ -51,16 +51,22 @@ public struct EngineOutput: Sendable, Equatable {
     public var replacement: Replacement?
     /// A typed word the user turned back after an automatic conversion: never convert it again.
     public var learnedException: String?
+    /// A typed word the user fixed by hand: always convert it from now on.
+    public var learnedWord: String?
+    /// A learned word to drop again (its fix was turned back).
+    public var forgottenWord: String?
     /// Nothing typed to fix: convert the selected text instead.
     public var convertsSelection: Bool
 
     public init(
         suppressesEvent: Bool = false, replacement: Replacement? = nil, learnedException: String? = nil,
-        convertsSelection: Bool = false
+        learnedWord: String? = nil, forgottenWord: String? = nil, convertsSelection: Bool = false
     ) {
         self.suppressesEvent = suppressesEvent
         self.replacement = replacement
         self.learnedException = learnedException
+        self.learnedWord = learnedWord
+        self.forgottenWord = forgottenWord
         self.convertsSelection = convertsSelection
     }
 

@@ -11,6 +11,8 @@ public struct LadEngine: Sendable {
     static let maxTrailing = 3
     /// Finished words kept: undecided ones convert along with a following converted word.
     static let maxHistory = 3
+    /// Shorter words are not learned from a double-Shift fix (single letters convert along anyway).
+    static let minLearnedLength = 2
 
     public private(set) var layouts: LayoutPair?
     public var detector: Detector?
@@ -20,11 +22,15 @@ public struct LadEngine: Sendable {
     public var convertsOnReturn = true
     /// Normalized typed words never to convert (the user turned them back).
     public var exceptions: Set<String> = []
+    /// Normalized typed words always to convert (the user fixed them by hand).
+    public var learnedWords: Set<String> = []
 
     private var word: [KeyStroke] = []
     /// Finished words, oldest first; the last one ends right before the caret (or the current word).
     private var history: [TypedWord] = []
     private var lastConversion: Conversion?
+    /// The current word was fixed by hand mid-word, from this layout: it is learned whole at its end.
+    private var lessonFromLayoutID: String?
     private var overflowed = false
     private var shiftTaps = ShiftTapDetector()
 
@@ -65,6 +71,7 @@ public struct LadEngine: Sendable {
         word = []
         history = []
         lastConversion = nil
+        lessonFromLayoutID = nil
         overflowed = false
         shiftTaps.interrupt()
     }
@@ -91,8 +98,10 @@ extension LadEngine {
         let original: String
         let insertedCount: Int
         let fromLayoutID: String
-        /// For automatic conversions: the typed word, normalized, to learn as an exception.
+        /// Automatic: the typed word, normalized; turning it back makes it an exception.
         let exception: String?
+        /// By hand: the word this fix taught Lad; turning it back at once forgets it again.
+        let taught: String?
     }
 
     private mutating func handleKey(_ keyCode: UInt16, modifiers: Modifiers, isRepeat: Bool) -> EngineOutput {
@@ -136,6 +145,7 @@ extension LadEngine {
             overflowed = true
             word = []
             history = []
+            lessonFromLayoutID = nil
             return
         }
         word.append(stroke)
@@ -153,39 +163,47 @@ extension LadEngine {
         }
         let strokes = word
         word = []
+        let lesson = takeLesson(for: strokes, layouts: layouts)
         var verdict = verdict(for: strokes, layouts: layouts)
         // Only a space converts right away: punctuation after a word is too often code or a path
         // (src/, jwt-), so the word waits and converts along with the next one.
         if verdict == .convert, layouts.current.text(for: boundary) != " " {
             verdict = .undecided
         }
-        guard verdict == .convert else {
+        var output = EngineOutput.pass
+        if verdict == .convert {
+            output = convertAutomatically(strokes, boundary: boundary, layouts: layouts)
+        } else {
             remember(TypedWord(strokes: strokes, trailing: [boundary], verdict: verdict, layoutID: layouts.current.id))
-            return .pass
         }
-        return convertAutomatically(strokes, boundary: boundary, layouts: layouts)
+        output.learnedWord = lesson
+        return output
     }
 
     /// Return or Enter ends the line. A word that converts is retyped and the key pressed again
     /// after it (the app may send the message right away), so nothing of the line is kept for an undo.
     private mutating func finishLine(with key: KeyStroke, layouts: LayoutPair) -> EngineOutput {
         defer { reset() }
-        guard convertsOnReturn, !overflowed, !word.isEmpty, verdict(for: word, layouts: layouts) == .convert else {
-            return .pass
-        }
+        guard !overflowed, !word.isEmpty else { return .pass }
+        let lesson = takeLesson(for: word, layouts: layouts)
         let segment = pendingStrokes(layouts: layouts) + word
-        guard let original = layouts.current.text(for: segment), let inserted = layouts.other.text(for: segment) else {
-            return .pass
+        guard convertsOnReturn, verdict(for: word, layouts: layouts) == .convert,
+              let original = layouts.current.text(for: segment), let inserted = layouts.other.text(for: segment) else {
+            return EngineOutput(learnedWord: lesson)
         }
         self.layouts = layouts.swapped
         let replacement = Replacement(deleteCount: original.count, text: inserted, layoutID: layouts.other.id, followUpKey: key)
-        return EngineOutput(suppressesEvent: true, replacement: replacement)
+        return EngineOutput(suppressesEvent: true, replacement: replacement, learnedWord: lesson)
     }
 
     private func verdict(for strokes: [KeyStroke], layouts: LayoutPair) -> Verdict {
-        guard isAutomatic, let detector, let typedLanguage = layouts.current.language,
-              let otherLanguage = layouts.other.language, let typed = layouts.current.text(for: strokes),
-              let other = layouts.other.text(for: strokes) else { return .keep }
+        guard isAutomatic, let typedLanguage = layouts.current.language, let otherLanguage = layouts.other.language,
+              let typed = layouts.current.text(for: strokes), let other = layouts.other.text(for: strokes) else { return .keep }
+        let normalized = WordText.normalized(typed)
+        if learnedWords.contains(normalized), !exceptions.contains(normalized), Detector.hasPlainCase(typed, in: typedLanguage) {
+            return .convert
+        }
+        guard let detector else { return .keep }
         return detector.verdict(typed: typed, in: typedLanguage, other: other, in: otherLanguage, exceptions: exceptions)
     }
 
@@ -229,6 +247,28 @@ extension LadEngine {
     }
 }
 
+// MARK: - Learning
+
+extension LadEngine {
+    /// After a double-Shift fix in the middle of the word: the whole word as typed in the wrong
+    /// layout, learned now that it is complete.
+    private mutating func takeLesson(for strokes: [KeyStroke], layouts: LayoutPair) -> String? {
+        guard let fromLayoutID = lessonFromLayoutID else { return nil }
+        lessonFromLayoutID = nil
+        guard fromLayoutID == layouts.other.id, let typed = layouts.other.text(for: strokes) else { return nil }
+        return learn(typed)
+    }
+
+    /// Adds a typed word to the learned words (it stops being an exception); nil when too short.
+    private mutating func learn(_ typed: String) -> String? {
+        let normalized = WordText.normalized(typed)
+        guard normalized.count >= Self.minLearnedLength else { return nil }
+        learnedWords.insert(normalized)
+        exceptions.remove(normalized)
+        return normalized
+    }
+}
+
 // MARK: - Conversions
 
 extension LadEngine {
@@ -241,7 +281,7 @@ extension LadEngine {
         self.layouts = layouts.swapped
         lastConversion = Conversion(
             original: original, insertedCount: inserted.count, fromLayoutID: layouts.current.id,
-            exception: layouts.current.text(for: strokes).map(WordText.normalized)
+            exception: layouts.current.text(for: strokes).map(WordText.normalized), taught: nil
         )
         history = [TypedWord(strokes: strokes, trailing: [boundary], verdict: nil, layoutID: layouts.other.id)]
         let replacement = Replacement(
@@ -271,34 +311,45 @@ extension LadEngine {
     }
 
     /// Double Shift: turn back the last conversion, else convert the word being typed, else the
-    /// last word, else ask for the selection.
+    /// last word (and learn it), else ask for the selection.
     private mutating func doubleShift() -> EngineOutput {
         guard let layouts else { return .pass }
         if let conversion = lastConversion {
             return undo(conversion, layouts: layouts)
         }
         if !word.isEmpty {
-            return convertByHand(word, layouts: layouts)
+            let output = convertByHand(word, layouts: layouts, taught: nil)
+            if output.replacement != nil {
+                lessonFromLayoutID = layouts.current.id
+            }
+            return output
         }
         if let last = history.last, last.layoutID == layouts.current.id {
-            let output = convertByHand(last.allStrokes, layouts: layouts)
+            // A word Lad left alone, fixed by hand: Lad converts it on its own from now on.
+            let typed = last.verdict == nil ? nil : layouts.current.text(for: last.strokes)
+            let taught = typed.flatMap { learn($0) }
+            var output = convertByHand(last.allStrokes, layouts: layouts, taught: taught)
+            output.learnedWord = taught
             history = [TypedWord(strokes: last.strokes, trailing: last.trailing, verdict: nil, layoutID: layouts.other.id)]
             return output
         }
         return EngineOutput(convertsSelection: true)
     }
 
-    private mutating func convertByHand(_ strokes: [KeyStroke], layouts: LayoutPair) -> EngineOutput {
+    private mutating func convertByHand(_ strokes: [KeyStroke], layouts: LayoutPair, taught: String?) -> EngineOutput {
         guard let typed = layouts.current.text(for: strokes), let other = layouts.other.text(for: strokes) else {
             return .pass
         }
         self.layouts = layouts.swapped
-        lastConversion = Conversion(original: typed, insertedCount: other.count, fromLayoutID: layouts.current.id, exception: nil)
+        lastConversion = Conversion(
+            original: typed, insertedCount: other.count, fromLayoutID: layouts.current.id, exception: nil, taught: taught
+        )
         return EngineOutput(replacement: Replacement(deleteCount: typed.count, text: other, layoutID: layouts.other.id))
     }
 
     private mutating func undo(_ conversion: Conversion, layouts: LayoutPair) -> EngineOutput {
         lastConversion = nil
+        lessonFromLayoutID = nil
         guard conversion.fromLayoutID == layouts.other.id else {
             reset()
             return .pass
@@ -311,10 +362,21 @@ extension LadEngine {
             }
             history = [last]
         }
-        if let exception = conversion.exception {
-            exceptions.insert(exception)
-        }
         let replacement = Replacement(deleteCount: conversion.insertedCount, text: conversion.original, layoutID: conversion.fromLayoutID)
-        return EngineOutput(replacement: replacement, learnedException: conversion.exception)
+        var output = EngineOutput(replacement: replacement)
+        if let exception = conversion.exception {
+            // An automatic conversion turned back: never again, even if it was learned.
+            exceptions.insert(exception)
+            output.learnedException = exception
+            if learnedWords.remove(exception) != nil {
+                output.forgottenWord = exception
+            }
+        }
+        if let taught = conversion.taught {
+            // A fix by hand turned back at once: it was no lesson.
+            learnedWords.remove(taught)
+            output.forgottenWord = taught
+        }
+        return output
     }
 }

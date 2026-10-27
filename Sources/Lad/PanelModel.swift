@@ -19,6 +19,8 @@ final class PanelModel: ObservableObject {
     @Published private(set) var health = Health.loadingWords
     /// Most recent first.
     @Published private(set) var exceptions: [String] = []
+    /// Most recent first.
+    @Published private(set) var learnedWords: [String] = []
     @Published private(set) var loginNeedsApproval = false
 
     @Published var isAutomatic = true {
@@ -60,6 +62,7 @@ final class PanelModel: ObservableObject {
         isAutomatic = controller.isAutomatic
         convertsOnReturn = controller.convertsOnReturn
         exceptions = controller.exceptions
+        learnedWords = controller.learnedWords
         playsSound = settings.playsSound
         iconStyle = settings.iconStyle
         launchesAtLogin = LoginItem.isEnabled
@@ -73,6 +76,16 @@ final class PanelModel: ObservableObject {
 
     func clearExceptions() {
         controller.clearExceptions()
+        refresh()
+    }
+
+    func removeLearnedWord(_ word: String) {
+        controller.removeLearnedWord(word)
+        refresh()
+    }
+
+    func clearLearnedWords() {
+        controller.clearLearnedWords()
         refresh()
     }
 

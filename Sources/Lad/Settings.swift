@@ -20,6 +20,7 @@ final class Settings {
         static let automatic = "automaticSwitching"
         static let convertsOnReturn = "convertsOnReturn"
         static let exceptions = "exceptions"
+        static let learnedWords = "learnedWords"
         static let playsSound = "playsSound"
         static let iconStyle = "iconStyle"
         static let didFirstLaunchSetup = "didFirstLaunchSetup"
@@ -27,8 +28,8 @@ final class Settings {
         static let removedExcludedApps = "excludedApps"
     }
 
-    /// The longest exception list kept; the oldest words go first.
-    static let maxExceptions = 500
+    /// The longest exception or learned-word list kept; the oldest words go first.
+    static let maxListLength = 500
 
     private let defaults: UserDefaults
 
@@ -71,18 +72,47 @@ final class Settings {
         defaults.stringArray(forKey: Key.exceptions) ?? []
     }
 
+    /// A word is either an exception or learned, never both.
     func addException(_ word: String) {
-        var list = exceptions.filter { $0 != word }
-        list.append(word)
-        defaults.set(Array(list.suffix(Self.maxExceptions)), forKey: Key.exceptions)
+        append(word, to: Key.exceptions)
+        remove(word, from: Key.learnedWords)
     }
 
     func removeException(_ word: String) {
-        defaults.set(exceptions.filter { $0 != word }, forKey: Key.exceptions)
+        remove(word, from: Key.exceptions)
     }
 
     func clearExceptions() {
         defaults.removeObject(forKey: Key.exceptions)
+    }
+
+    /// Words the user fixed by hand: Lad converts them on its own. Oldest first.
+    var learnedWords: [String] {
+        defaults.stringArray(forKey: Key.learnedWords) ?? []
+    }
+
+    func addLearnedWord(_ word: String) {
+        append(word, to: Key.learnedWords)
+        remove(word, from: Key.exceptions)
+    }
+
+    func removeLearnedWord(_ word: String) {
+        remove(word, from: Key.learnedWords)
+    }
+
+    func clearLearnedWords() {
+        defaults.removeObject(forKey: Key.learnedWords)
+    }
+
+    private func append(_ word: String, to key: String) {
+        var list = (defaults.stringArray(forKey: key) ?? []).filter { $0 != word }
+        list.append(word)
+        defaults.set(Array(list.suffix(Self.maxListLength)), forKey: key)
+    }
+
+    private func remove(_ word: String, from key: String) {
+        guard let list = defaults.stringArray(forKey: key), list.contains(word) else { return }
+        defaults.set(list.filter { $0 != word }, forKey: key)
     }
 }
 

@@ -135,7 +135,7 @@ public struct Detector: Sendable {
     }
 
     /// Words are typed lowercase or capitalized; ALL CAPS and camelCase are acronyms and code (RFC, TVs).
-    private static func hasPlainCase(_ typed: String, in language: Language) -> Bool {
+    public static func hasPlainCase(_ typed: String, in language: Language) -> Bool {
         typed.filter(language.isLetter).dropFirst().allSatisfy { !$0.isUppercase }
     }
 

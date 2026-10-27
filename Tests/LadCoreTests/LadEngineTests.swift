@@ -233,6 +233,62 @@ struct LadEngineTests {
         ))
     }
 
+    @Test("A word fixed by hand is learned and converts on its own next time")
+    func learnsFromFixByHand() throws {
+        var typist = Typist(Fixture.typingInUS)
+        #expect(typist.type("db ", on: us).isEmpty)
+        let fix = typist.doubleShift()
+        #expect(fix.replacement?.text == "ви ")
+        #expect(fix.learnedWord == "db")
+        #expect(typist.engine.learnedWords == ["db"])
+        typist.engine.currentLayoutDidChange(to: us.id)
+        let output = try #require(typist.type("db ", on: us).last)
+        #expect(output.replacement == Replacement(deleteCount: 2, text: "ви ", layoutID: ua.id))
+    }
+
+    @Test("A fix by hand turned back at once teaches nothing")
+    func forgetsUndoneFix() {
+        var typist = Typist(Fixture.typingInUS)
+        typist.type("db ", on: us)
+        _ = typist.doubleShift()
+        let undo = typist.doubleShift()
+        #expect(undo.replacement?.text == "db ")
+        #expect(undo.forgottenWord == "db")
+        #expect(typist.engine.learnedWords.isEmpty)
+    }
+
+    @Test("Turning back a learned conversion makes the word an exception")
+    func learnedThenTurnedBack() {
+        var typist = Typist(Fixture.typingInUS)
+        typist.engine.learnedWords = ["db"]
+        #expect(typist.type("db ", on: us).last?.replacement?.text == "ви ")
+        let undo = typist.doubleShift()
+        #expect(undo.learnedException == "db")
+        #expect(undo.forgottenWord == "db")
+        #expect(typist.engine.learnedWords.isEmpty)
+        #expect(typist.engine.exceptions == ["db"])
+    }
+
+    @Test("A fix in the middle of a word is learned whole when the word ends")
+    func learnsWholeWordAfterMidWordFix() {
+        var typist = Typist(Fixture.typingInUS)
+        typist.type("ghbd", on: us)
+        _ = typist.doubleShift()
+        typist.type("іт", on: ua)
+        let output = typist.press(KeyCode.space)
+        #expect(output.replacement == nil)
+        #expect(output.learnedWord == "ghbdsn")
+    }
+
+    @Test("Single letters are not learned")
+    func skipsSingleLetters() {
+        var typist = Typist(Fixture.typingInUS)
+        typist.type("z ", on: us)
+        let fix = typist.doubleShift()
+        #expect(fix.replacement?.text == "я ")
+        #expect(fix.learnedWord == nil)
+    }
+
     @Test("Without layouts the engine passes everything")
     func passesWithoutLayouts() {
         var engine = LadEngine()

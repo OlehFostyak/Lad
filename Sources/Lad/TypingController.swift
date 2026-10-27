@@ -34,6 +34,7 @@ final class TypingController {
         engine.isAutomatic = settings.isAutomatic
         engine.convertsOnReturn = settings.convertsOnReturn
         engine.exceptions = Set(settings.exceptions)
+        engine.learnedWords = Set(settings.learnedWords)
         inputSources.onSelectionChange = { [weak self] layoutID in self?.layoutDidChange(to: layoutID) }
         inputSources.onEnabledChange = { [weak self] in self?.refreshLayouts() }
         focus.onFocusChange = { [weak self] in self?.engine.reset() }
@@ -48,6 +49,8 @@ final class TypingController {
     var convertsOnReturn: Bool { engine.convertsOnReturn }
     /// The words never converted again, most recent first.
     var exceptions: [String] { settings.exceptions.reversed() }
+    /// The words always converted (fixed by hand once), most recent first.
+    var learnedWords: [String] { settings.learnedWords.reversed() }
 
     /// A password field or a locked screen holds secure input; Lad sees no keys meanwhile.
     var isSecureInputOn: Bool { IsSecureEventInputEnabled() }
@@ -99,6 +102,18 @@ final class TypingController {
         onStateChange?()
     }
 
+    func removeLearnedWord(_ word: String) {
+        settings.removeLearnedWord(word)
+        engine.learnedWords.remove(word)
+        onStateChange?()
+    }
+
+    func clearLearnedWords() {
+        settings.clearLearnedWords()
+        engine.learnedWords = []
+        onStateChange?()
+    }
+
     /// Lad is quitting: put back a pasteboard a selection conversion borrowed.
     func prepareForTermination() {
         selection.finishPendingRestore()
@@ -111,9 +126,7 @@ final class TypingController {
             return false
         }
         let result = engine.handle(event)
-        if let exception = result.learnedException {
-            settings.addException(exception)
-        }
+        remember(result)
         if let replacement = result.replacement {
             output.perform(replacement)
             select(replacement.layoutID)
@@ -130,6 +143,19 @@ final class TypingController {
             }
         }
         return result.suppressesEvent
+    }
+
+    /// Persists what the engine learned: exceptions and words fixed by hand.
+    private func remember(_ result: EngineOutput) {
+        if let word = result.forgottenWord {
+            settings.removeLearnedWord(word)
+        }
+        if let word = result.learnedException {
+            settings.addException(word)
+        }
+        if let word = result.learnedWord {
+            settings.addLearnedWord(word)
+        }
     }
 
     /// The engine already switched; if the system refuses, the engine re-reads the real layout.

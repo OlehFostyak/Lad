@@ -92,22 +92,17 @@ struct PanelView: View {
     }
 
     private var lists: some View {
-        DisclosureGroup("Винятки (\(model.exceptions.count))") {
-            if model.exceptions.isEmpty {
-                Note(text: "Слова, які ти скасував подвійним Shift, Lad більше не виправляє.")
-            } else {
-                ScrollView {
-                    VStack(spacing: 4) {
-                        ForEach(model.exceptions, id: \.self) { word in
-                            RemovableRow(title: word) { model.removeException(word) }
-                        }
-                    }
-                }
-                .frame(maxHeight: 140)
-                Button("Забути всі", role: .destructive, action: model.clearExceptions)
-                    .buttonStyle(.link)
-                    .font(.caption)
-            }
+        VStack(alignment: .leading, spacing: 6) {
+            WordList(
+                title: "Завжди виправляти", words: model.learnedWords,
+                note: "Слова, які ти виправив подвійним Shift, Lad далі виправляє сам.",
+                remove: model.removeLearnedWord, clear: model.clearLearnedWords
+            )
+            WordList(
+                title: "Винятки", words: model.exceptions,
+                note: "Слова, які ти скасував подвійним Shift, Lad більше не виправляє.",
+                remove: model.removeException, clear: model.clearExceptions
+            )
         }
     }
 
@@ -164,6 +159,35 @@ private struct SwitchRow: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
+        }
+    }
+}
+
+/// A collapsible list of words with a remove button each and a "forget all" link.
+private struct WordList: View {
+    let title: String
+    let words: [String]
+    let note: String
+    let remove: (String) -> Void
+    let clear: () -> Void
+
+    var body: some View {
+        DisclosureGroup("\(title) (\(words.count))") {
+            if words.isEmpty {
+                Note(text: note)
+            } else {
+                ScrollView {
+                    VStack(spacing: 4) {
+                        ForEach(words, id: \.self) { word in
+                            RemovableRow(title: word) { remove(word) }
+                        }
+                    }
+                }
+                .frame(maxHeight: 140)
+                Button("Забути всі", role: .destructive, action: clear)
+                    .buttonStyle(.link)
+                    .font(.caption)
+            }
         }
     }
 }
