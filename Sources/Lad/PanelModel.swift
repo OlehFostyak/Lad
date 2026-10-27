@@ -7,7 +7,6 @@ final class PanelModel: ObservableObject {
     enum Health: Equatable {
         case working(pair: String)
         case manualOnly
-        case paused
         case secureInput
         case loadingWords
         case wordsFailed
@@ -15,27 +14,15 @@ final class PanelModel: ObservableObject {
         case needsLayouts
     }
 
-    struct App: Identifiable, Equatable {
-        /// The bundle ID.
-        let id: String
-        let name: String
-    }
-
     private static let keyboardSettingsURL = "x-apple.systempreferences:com.apple.Keyboard-Settings.extension"
 
     @Published private(set) var health = Health.loadingWords
-    /// The app in front (never Lad itself), which the pause switch acts on.
-    @Published private(set) var frontApp: App?
-    @Published private(set) var pausedApps: [App] = []
     /// Most recent first.
     @Published private(set) var exceptions: [String] = []
     @Published private(set) var loginNeedsApproval = false
 
     @Published var isAutomatic = true {
         didSet { apply { controller.setAutomatic(isAutomatic) } }
-    }
-    @Published var isFrontAppPaused = false {
-        didSet { apply { if let id = frontApp?.id { controller.setPaused(isFrontAppPaused, bundleID: id) } } }
     }
     @Published var playsSound = false {
         didSet { apply { settings.playsSound = playsSound } }
@@ -67,22 +54,12 @@ final class PanelModel: ObservableObject {
         isRefreshing = true
         defer { isRefreshing = false }
         health = Self.health(of: controller)
-        frontApp = controller.frontApp.flatMap { app in
-            app.bundleIdentifier.map { App(id: $0, name: app.localizedName ?? $0) }
-        }
         isAutomatic = controller.isAutomatic
-        isFrontAppPaused = controller.isPausedInFrontApp
-        pausedApps = controller.pausedApps.sorted().map { App(id: $0, name: Self.appName(for: $0)) }
         exceptions = controller.exceptions
         playsSound = settings.playsSound
         iconStyle = settings.iconStyle
         launchesAtLogin = LoginItem.isEnabled
         loginNeedsApproval = LoginItem.needsApproval
-    }
-
-    func resume(_ app: App) {
-        controller.setPaused(false, bundleID: app.id)
-        refresh()
     }
 
     func removeException(_ word: String) {
@@ -139,18 +116,10 @@ final class PanelModel: ObservableObject {
         case .failed: return .wordsFailed
         case .ready: break
         }
-        if controller.isPausedInFrontApp { return .paused }
         if controller.isSecureInputOn { return .secureInput }
         if !controller.isAutomatic { return .manualOnly }
         // Latin first, whichever layout is in use.
         let names = [layouts.current, layouts.other].sorted { ($0.language == .english ? 0 : 1) < ($1.language == .english ? 0 : 1) }
         return .working(pair: names.map(\.name).joined(separator: " ⇄ "))
-    }
-
-    private static func appName(for bundleID: String) -> String {
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return bundleID }
-        let info = Bundle(url: url)?.localizedInfoDictionary ?? Bundle(url: url)?.infoDictionary
-        return (info?["CFBundleDisplayName"] as? String) ?? (info?["CFBundleName"] as? String)
-            ?? url.deletingPathExtension().lastPathComponent
     }
 }

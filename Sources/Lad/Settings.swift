@@ -13,16 +13,17 @@ enum IconStyle: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-/// Lad's preferences in UserDefaults: switches, the bundle IDs of paused apps and the words the
-/// user turned back after an automatic conversion. Nothing else that was typed is ever stored.
+/// Lad's preferences in UserDefaults: switches and the words the user turned back after an
+/// automatic conversion. Nothing else that was typed is ever stored.
 final class Settings {
     private enum Key {
         static let automatic = "automaticSwitching"
-        static let excludedApps = "excludedApps"
         static let exceptions = "exceptions"
         static let playsSound = "playsSound"
         static let iconStyle = "iconStyle"
         static let didFirstLaunchSetup = "didFirstLaunchSetup"
+        /// Per-app pause, removed in 0.1.1; its list is dropped on launch.
+        static let removedExcludedApps = "excludedApps"
     }
 
     /// The longest exception list kept; the oldest words go first.
@@ -33,6 +34,7 @@ final class Settings {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [Key.automatic: true, Key.iconStyle: IconStyle.keyboard.rawValue])
+        defaults.removeObject(forKey: Key.removedExcludedApps)
     }
 
     var isAutomatic: Bool {
@@ -54,11 +56,6 @@ final class Settings {
     var didFirstLaunchSetup: Bool {
         get { defaults.bool(forKey: Key.didFirstLaunchSetup) }
         set { defaults.set(newValue, forKey: Key.didFirstLaunchSetup) }
-    }
-
-    var excludedApps: Set<String> {
-        get { Set(defaults.stringArray(forKey: Key.excludedApps) ?? []) }
-        set { defaults.set(newValue.sorted(), forKey: Key.excludedApps) }
     }
 
     /// Oldest first.

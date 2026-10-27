@@ -65,9 +65,6 @@ struct PanelView: View {
     private var switches: some View {
         VStack(alignment: .leading, spacing: 8) {
             SwitchRow(title: "Автоматичне перемикання", detail: "Виправляти слово на пробілі", isOn: $model.isAutomatic)
-            if let app = model.frontApp {
-                SwitchRow(title: "Пауза в «\(app.name)»", detail: "У цій програмі Lad нічого не чіпає", isOn: $model.isFrontAppPaused)
-            }
             SwitchRow(title: "Звук при виправленні", detail: nil, isOn: $model.playsSound)
             SwitchRow(title: "Запускати разом із macOS", detail: nil, isOn: $model.launchesAtLogin)
             if model.loginNeedsApproval {
@@ -94,31 +91,21 @@ struct PanelView: View {
     }
 
     private var lists: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            DisclosureGroup("Програми на паузі (\(model.pausedApps.count))") {
-                if model.pausedApps.isEmpty {
-                    Note(text: "Немає. Паузу вмикають для програми, що зараз попереду.")
-                }
-                ForEach(model.pausedApps) { app in
-                    RemovableRow(title: app.name, monospaced: false) { model.resume(app) }
-                }
-            }
-            DisclosureGroup("Винятки (\(model.exceptions.count))") {
-                if model.exceptions.isEmpty {
-                    Note(text: "Слова, які ти скасував подвійним Shift, Lad більше не виправляє.")
-                } else {
-                    ScrollView {
-                        VStack(spacing: 4) {
-                            ForEach(model.exceptions, id: \.self) { word in
-                                RemovableRow(title: word, monospaced: true) { model.removeException(word) }
-                            }
+        DisclosureGroup("Винятки (\(model.exceptions.count))") {
+            if model.exceptions.isEmpty {
+                Note(text: "Слова, які ти скасував подвійним Shift, Lad більше не виправляє.")
+            } else {
+                ScrollView {
+                    VStack(spacing: 4) {
+                        ForEach(model.exceptions, id: \.self) { word in
+                            RemovableRow(title: word) { model.removeException(word) }
                         }
                     }
-                    .frame(maxHeight: 140)
-                    Button("Забути всі", role: .destructive, action: model.clearExceptions)
-                        .buttonStyle(.link)
-                        .font(.caption)
                 }
+                .frame(maxHeight: 140)
+                Button("Забути всі", role: .destructive, action: model.clearExceptions)
+                    .buttonStyle(.link)
+                    .font(.caption)
             }
         }
     }
@@ -141,7 +128,6 @@ struct PanelView: View {
         switch model.health {
         case let .working(pair): "Працює · \(pair)"
         case .manualOnly: "Лише вручну: двічі Shift"
-        case .paused: "На паузі в «\(model.frontApp?.name ?? "цій програмі")»"
         case .secureInput: "Чекає: увімкнений захищений ввід (поле пароля)"
         case .loadingWords: "Завантажую словники…"
         case .wordsFailed: "Словники не завантажились"
@@ -153,7 +139,7 @@ struct PanelView: View {
     private var statusColor: Color {
         switch model.health {
         case .working: .green
-        case .manualOnly, .paused, .secureInput, .loadingWords: .secondary
+        case .manualOnly, .secureInput, .loadingWords: .secondary
         case .wordsFailed, .needsAccess, .needsLayouts: .orange
         }
     }
@@ -183,13 +169,12 @@ private struct SwitchRow: View {
 
 private struct RemovableRow: View {
     let title: String
-    let monospaced: Bool
     let remove: () -> Void
 
     var body: some View {
         HStack {
             Text(title)
-                .font(monospaced ? .system(.body, design: .monospaced) : .body)
+                .font(.system(.body, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()

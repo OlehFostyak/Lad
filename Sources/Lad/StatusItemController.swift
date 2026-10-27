@@ -37,11 +37,11 @@ final class StatusItemController: NSObject {
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 
-    /// The icon: the chosen style; dimmed while paused or manual-only; a warning when Lad cannot work.
+    /// The icon: the chosen style; dimmed while manual-only; a warning when Lad cannot work.
     func refresh() {
         guard let button = item.button else { return }
         let needsAttention = !controller.isTapRunning || controller.layouts == nil || controller.dictionaries == .failed
-        button.appearsDisabled = !needsAttention && (controller.isPausedInFrontApp || !controller.isAutomatic)
+        button.appearsDisabled = !needsAttention && !controller.isAutomatic
         if needsAttention {
             show(NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "Lad: потрібна увага"), on: button)
             return

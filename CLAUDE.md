@@ -30,4 +30,3 @@ app, Swift 6, built with the Command Line Tools only — never propose installin
 - Change detector thresholds only with `lad-eval sweep`/`quality` numbers before and after; a false
   conversion of a correctly typed word is worse than a missed one.
 - Code and comments in English; README and UI strings in Ukrainian.
-- ECC rules for this project live in `.claude/rules/ecc/` (common + swift).

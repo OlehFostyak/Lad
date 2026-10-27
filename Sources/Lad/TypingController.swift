@@ -14,9 +14,10 @@ final class TypingController {
     /// Anything the panel or the icon shows changed.
     var onStateChange: (() -> Void)?
     private(set) var dictionaries = DictionaryState.loading
-    private(set) var frontApp: NSRunningApplication?
 
     private var engine = LadEngine()
+    /// The app in front (never Lad itself), whose focus changes reset the typing.
+    private var frontProcessID: pid_t?
     private let settings: Settings
     private let inputSources: InputSources
     private let output = KeyboardOutput()
@@ -36,25 +37,18 @@ final class TypingController {
         inputSources.onEnabledChange = { [weak self] in self?.refreshLayouts() }
         focus.onFocusChange = { [weak self] in self?.engine.reset() }
         observeWorkspace()
-        frontApp = NSWorkspace.shared.frontmostApplication
+        frontProcessID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         refreshLayouts()
     }
 
     var layouts: LayoutPair? { engine.layouts }
     var isTapRunning: Bool { tap?.isRunning ?? false }
     var isAutomatic: Bool { engine.isAutomatic }
-    var pausedApps: Set<String> { settings.excludedApps }
     /// The words never converted again, most recent first.
     var exceptions: [String] { settings.exceptions.reversed() }
 
     /// A password field or a locked screen holds secure input; Lad sees no keys meanwhile.
     var isSecureInputOn: Bool { IsSecureEventInputEnabled() }
-
-    /// Lad does nothing at all in a paused app, double Shift included.
-    var isPausedInFrontApp: Bool {
-        guard let bundleID = frontApp?.bundleIdentifier else { return false }
-        return settings.excludedApps.contains(bundleID)
-    }
 
     /// Installs the event tap; false until Lad has the Accessibility permission.
     func startTap() -> Bool {
@@ -62,7 +56,7 @@ final class TypingController {
         self.tap = tap
         let started = tap.start()
         if started {
-            focus.observe(processID: frontApp?.processIdentifier)
+            focus.observe(processID: frontProcessID)
         }
         onStateChange?()
         return started
@@ -85,18 +79,6 @@ final class TypingController {
         onStateChange?()
     }
 
-    func setPaused(_ paused: Bool, bundleID: String) {
-        var excluded = settings.excludedApps
-        if paused {
-            excluded.insert(bundleID)
-        } else {
-            excluded.remove(bundleID)
-        }
-        settings.excludedApps = excluded
-        engine.reset()
-        onStateChange?()
-    }
-
     func removeException(_ word: String) {
         settings.removeException(word)
         engine.exceptions.remove(word)
@@ -115,7 +97,6 @@ final class TypingController {
     }
 
     private func handle(_ event: InputEvent) -> Bool {
-        guard !isPausedInFrontApp else { return false }
         // Secure input (password fields, Terminal's Secure Keyboard Entry): Lad stays out entirely.
         guard !IsSecureEventInputEnabled() else {
             engine.reset()
@@ -187,7 +168,7 @@ final class TypingController {
     private func appDidActivate(bundleID: String?, processID: pid_t?) {
         // Lad's own panel does not count as switching apps.
         guard bundleID != Bundle.main.bundleIdentifier else { return }
-        frontApp = processID.flatMap { NSRunningApplication(processIdentifier: $0) }
+        frontProcessID = processID
         focus.observe(processID: processID)
         // Apps can keep their own input source: re-read it rather than trust the engine's.
         if inputSources.currentID != engine.layouts?.current.id {
