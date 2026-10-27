@@ -24,6 +24,8 @@ final class TypingController {
     private let selection: SelectionConverter
     private let focus = FocusObserver()
     private let sound = NSSound(named: "Pop")
+    private var rhythm = TypingRhythm()
+    private var sources = SourceFilter()
     private var tap: EventTap?
     private var observers: [NSObjectProtocol] = []
 
@@ -59,7 +61,7 @@ final class TypingController {
 
     /// Installs the event tap; false until Lad has the Accessibility permission.
     func startTap() -> Bool {
-        let tap = self.tap ?? EventTap { [unowned self] event in self.handle(event) }
+        let tap = self.tap ?? EventTap { [unowned self] event, origin in self.handle(event, from: origin) }
         self.tap = tap
         let started = tap.start()
         if started {
@@ -127,9 +129,10 @@ final class TypingController {
         selection.finishPendingRestore()
     }
 
-    private func handle(_ event: InputEvent) -> Bool {
+    private func handle(_ event: InputEvent, from origin: InputOrigin) -> Bool {
         // Secure input (password fields, Terminal's Secure Keyboard Entry): Lad stays out entirely.
-        guard !IsSecureEventInputEnabled() else {
+        // So it does for keys another program types (auto-typed passwords, text expanders).
+        guard !IsSecureEventInputEnabled(), !isTypedByProgram(event, from: origin) else {
             engine.reset()
             return false
         }
@@ -151,6 +154,20 @@ final class TypingController {
             }
         }
         return result.suppressesEvent
+    }
+
+    /// Key presses posted by another program, or coming faster than a hand types.
+    private func isTypedByProgram(_ event: InputEvent, from origin: InputOrigin) -> Bool {
+        switch event {
+        case .keyDown:
+            let isForeign = sources.isForeign(origin)
+            let isMachine = rhythm.isMachine(at: origin.time)
+            return isForeign || isMachine
+        case .modifiersChanged:
+            return origin.processID != 0 && sources.isCalibrated
+        case .reset:
+            return false
+        }
     }
 
     /// Persists what the engine learned: exceptions and words fixed by hand.

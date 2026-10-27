@@ -7,14 +7,14 @@ import LadCore
 final class EventTap {
     /// What the tap callback reads from an event, before handing it to the main actor.
     fileprivate enum Observation: Sendable {
-        case input(InputEvent)
+        case input(InputEvent, InputOrigin)
         /// The system disabled the tap (a callback timeout or user input).
         case disabled
         case ignored
     }
 
     /// Returns true to drop the event.
-    typealias Handler = (InputEvent) -> Bool
+    typealias Handler = (InputEvent, InputOrigin) -> Bool
 
     private let handler: Handler
     private var port: CFMachPort?
@@ -46,14 +46,14 @@ final class EventTap {
 
     fileprivate func process(_ observation: Observation) -> Bool {
         switch observation {
-        case let .input(event):
-            return handler(event)
+        case let .input(event, origin):
+            return handler(event, origin)
         case .disabled:
             if let port {
                 CGEvent.tapEnable(tap: port, enable: true)
             }
             Log.record(.tapReenabled)
-            _ = handler(.reset)
+            _ = handler(.reset, InputOrigin(processID: 0, time: ProcessInfo.processInfo.systemUptime))
             return false
         case .ignored:
             return false
@@ -61,17 +61,21 @@ final class EventTap {
     }
 
     fileprivate nonisolated static func observe(_ type: CGEventType, _ event: CGEvent) -> Observation {
+        let origin = InputOrigin(
+            processID: event.getIntegerValueField(.eventSourceUnixProcessID), time: ProcessInfo.processInfo.systemUptime
+        )
+        let isLads = event.getIntegerValueField(.eventSourceUserData) == KeyboardOutput.marker
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             return .disabled
-        case .keyDown where event.getIntegerValueField(.eventSourceUserData) != KeyboardOutput.marker:
+        case .keyDown where !isLads:
             let keyCode = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
             let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
-            return .input(.keyDown(keyCode: keyCode, modifiers: modifiers(of: event.flags), isRepeat: isRepeat))
-        case .flagsChanged where event.getIntegerValueField(.eventSourceUserData) != KeyboardOutput.marker:
-            return .input(.modifiersChanged(modifiers(of: event.flags), time: ProcessInfo.processInfo.systemUptime))
+            return .input(.keyDown(keyCode: keyCode, modifiers: modifiers(of: event.flags), isRepeat: isRepeat), origin)
+        case .flagsChanged where !isLads:
+            return .input(.modifiersChanged(modifiers(of: event.flags), time: origin.time), origin)
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
-            return .input(.reset)
+            return .input(.reset, origin)
         default:
             return .ignored
         }
