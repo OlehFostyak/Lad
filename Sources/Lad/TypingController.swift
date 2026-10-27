@@ -157,6 +157,10 @@ final class TypingController {
             engine.reset()
             return false
         }
+        if let hotkey = Hotkey.matching(event) {
+            perform(hotkey)
+            return true
+        }
         let layoutBefore = engine.layouts?.current.id
         let result = engine.handle(event)
         remember(result)
@@ -180,6 +184,14 @@ final class TypingController {
             }
         }
         return result.suppressesEvent
+    }
+
+    private func perform(_ hotkey: Hotkey) {
+        switch hotkey {
+        case .toggleAutomatic:
+            setAutomatic(!engine.isAutomatic)
+            showHint(engine.isAutomatic ? "Lad увімк." : "Lad вимк.", ukrainian: false)
+        }
     }
 
     /// Flashes the layout now in use next to the caret, after the event tap callback has returned.
