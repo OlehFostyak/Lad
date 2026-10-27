@@ -24,9 +24,12 @@ app, Swift 6, built with the Command Line Tools only — never propose installin
 ## Rules
 
 - Privacy is the point of this app: no networking APIs, no `print`, logging only through the fixed
-  `LogEvent`s in Log.swift, and the only typed text ever persisted is the exception list the user
-  builds by undoing conversions (shown in the panel). `Tests/LintTests` and `make verify` (otool/nm
-  on the binary) enforce this — keep them passing, extend them when adding APIs.
+  `LogEvent`s in Log.swift. Persisted (Settings.swift only): switches, the two word lists the user
+  builds with double Shift (exceptions, learned words — the only typed text on disk, shown in the
+  panel), bundle ID → layout ID per app, and per-day fix counts. Keys typed by other programs and
+  everything under secure input never reach the engine. `Tests/LintTests` and `make verify`
+  (otool/nm on the binary) enforce this — keep them passing, extend them when adding APIs.
+- Hotkeys are ⌃⌥ + L/T/U (`Hotkey` in LadCore); Babak owns ⌃⌥A/J/D/P. Avoid Space chords.
 - Change detector thresholds only with `lad-eval sweep`/`quality` numbers before and after; a false
   conversion of a correctly typed word is worse than a missed one.
 - Code and comments in English; README and UI strings in Ukrainian.
