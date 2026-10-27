@@ -74,6 +74,7 @@ struct PanelView: View {
                     : "Програма отримує ту розкладку, що була в ній востаннє",
                 isOn: $model.remembersAppLayouts
             )
+            SwitchRow(title: "Показувати розкладку біля курсора", detail: "UA / EN на мить, коли Lad перемикає", isOn: $model.showsLayoutHint)
             SwitchRow(title: "Звук при виправленні", detail: nil, isOn: $model.playsSound)
             SwitchRow(title: "Запускати разом із macOS", detail: nil, isOn: $model.launchesAtLogin)
             if model.loginNeedsApproval {

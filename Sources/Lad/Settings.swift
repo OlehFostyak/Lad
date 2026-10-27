@@ -21,6 +21,7 @@ final class Settings {
         static let convertsOnReturn = "convertsOnReturn"
         static let fixesTwoCapitals = "fixesTwoCapitals"
         static let remembersAppLayouts = "remembersAppLayouts"
+        static let showsLayoutHint = "showsLayoutHint"
         static let appLayouts = "appLayouts"
         static let exceptions = "exceptions"
         static let learnedWords = "learnedWords"
@@ -40,6 +41,7 @@ final class Settings {
         self.defaults = defaults
         defaults.register(defaults: [
             Key.automatic: true, Key.convertsOnReturn: true, Key.fixesTwoCapitals: true, Key.remembersAppLayouts: true,
+            Key.showsLayoutHint: true,
             Key.iconStyle: IconStyle.keyboard.rawValue,
         ])
         defaults.removeObject(forKey: Key.removedExcludedApps)
@@ -63,6 +65,11 @@ final class Settings {
     var remembersAppLayouts: Bool {
         get { defaults.bool(forKey: Key.remembersAppLayouts) }
         set { defaults.set(newValue, forKey: Key.remembersAppLayouts) }
+    }
+
+    var showsLayoutHint: Bool {
+        get { defaults.bool(forKey: Key.showsLayoutHint) }
+        set { defaults.set(newValue, forKey: Key.showsLayoutHint) }
     }
 
     /// Bundle ID → input source ID of the layout last used in the app.

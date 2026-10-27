@@ -37,6 +37,9 @@ final class PanelModel: ObservableObject {
     @Published var remembersAppLayouts = true {
         didSet { apply { controller.setRemembersAppLayouts(remembersAppLayouts) } }
     }
+    @Published var showsLayoutHint = true {
+        didSet { apply { controller.setShowsLayoutHint(showsLayoutHint) } }
+    }
     @Published var playsSound = false {
         didSet { apply { settings.playsSound = playsSound } }
     }
@@ -71,6 +74,7 @@ final class PanelModel: ObservableObject {
         convertsOnReturn = controller.convertsOnReturn
         fixesTwoCapitals = controller.fixesTwoCapitals
         remembersAppLayouts = controller.remembersAppLayouts
+        showsLayoutHint = controller.showsLayoutHint
         systemSwitchesPerDocument = controller.systemSwitchesPerDocument
         exceptions = controller.exceptions
         learnedWords = controller.learnedWords

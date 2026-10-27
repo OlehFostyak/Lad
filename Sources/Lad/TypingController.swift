@@ -26,6 +26,7 @@ final class TypingController {
     private let selection: SelectionConverter
     private let focus = FocusObserver()
     private let sound = NSSound(named: "Pop")
+    private let hint = LayoutHint()
     private var rhythm = TypingRhythm()
     private var sources = SourceFilter()
     private var tap: EventTap?
@@ -56,6 +57,13 @@ final class TypingController {
 
     func setRemembersAppLayouts(_ remembers: Bool) {
         settings.remembersAppLayouts = remembers
+        onStateChange?()
+    }
+
+    var showsLayoutHint: Bool { settings.showsLayoutHint }
+
+    func setShowsLayoutHint(_ shows: Bool) {
+        settings.showsLayoutHint = shows
         onStateChange?()
     }
 
@@ -149,6 +157,7 @@ final class TypingController {
             engine.reset()
             return false
         }
+        let layoutBefore = engine.layouts?.current.id
         let result = engine.handle(event)
         remember(result)
         if let replacement = result.replacement {
@@ -158,15 +167,32 @@ final class TypingController {
                 sound?.stop()
                 sound?.play()
             }
+            if replacement.layoutID != layoutBefore {
+                showHint(for: replacement.layoutID)
+            }
         }
         if result.convertsSelection, let layouts = engine.layouts {
             selection.convert(layouts: layouts) { [weak self] layoutID in
                 guard let self, let layoutID else { return }
                 select(layoutID)
                 engine.currentLayoutDidChange(to: layoutID)
+                showHint(for: layoutID)
             }
         }
         return result.suppressesEvent
+    }
+
+    /// Flashes the layout now in use next to the caret, after the event tap callback has returned.
+    private func showHint(for layoutID: String) {
+        let tables = [engine.layouts?.current, engine.layouts?.other].compactMap { $0 }
+        guard let table = tables.first(where: { $0.id == layoutID }) else { return }
+        let isUkrainian = table.language == .ukrainian
+        showHint(isUkrainian ? "UA" : "EN", ukrainian: isUkrainian)
+    }
+
+    private func showHint(_ text: String, ukrainian: Bool) {
+        guard settings.showsLayoutHint else { return }
+        Task { [hint] in hint.show(text, ukrainian: ukrainian) }
     }
 
     /// Key presses posted by another program, or coming faster than a hand types.
@@ -233,6 +259,7 @@ final class TypingController {
               ),
               inputSources.select(layoutID) else { return }
         engine.currentLayoutDidChange(to: layoutID)
+        showHint(for: layoutID)
     }
 
     private func refreshLayouts() {
