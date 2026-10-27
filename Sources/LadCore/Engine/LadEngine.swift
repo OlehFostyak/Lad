@@ -20,6 +20,8 @@ public struct LadEngine: Sendable {
     public var isAutomatic = true
     /// Return and keypad Enter convert the word before them too (the key is pressed again after).
     public var convertsOnReturn = true
+    /// "ПРивіт" becomes "Привіт" at the space (when the fixed word is listed).
+    public var fixesTwoCapitals = true
     /// Normalized typed words never to convert (the user turned them back).
     public var exceptions: Set<String> = []
     /// Normalized typed words always to convert (the user fixed them by hand).
@@ -173,11 +175,31 @@ extension LadEngine {
         var output = EngineOutput.pass
         if verdict == .convert {
             output = convertAutomatically(strokes, boundary: boundary, layouts: layouts)
+        } else if layouts.current.text(for: boundary) == " ", let fix = fixCase(strokes, boundary: boundary, layouts: layouts) {
+            output = fix
         } else {
             remember(TypedWord(strokes: strokes, trailing: [boundary], verdict: verdict, layoutID: layouts.current.id))
         }
         output.learnedWord = lesson
         return output
+    }
+
+    /// "ПРивіт" → "Привіт" in the same layout, when the fixed word is listed. The boundary key (if
+    /// any) is suppressed and retyped after the word, like a conversion, so double Shift undoes it.
+    private mutating func fixCase(_ strokes: [KeyStroke], boundary: KeyStroke?, layouts: LayoutPair) -> EngineOutput? {
+        guard fixesTwoCapitals, let detector, let language = layouts.current.language,
+              let typed = layouts.current.text(for: strokes), !exceptions.contains(WordText.normalized(typed)),
+              let fixed = CaseFix.twoInitialCapitals(typed, in: language), detector.isListed(fixed, in: language) else {
+            return nil
+        }
+        let boundaryText = boundary.flatMap { layouts.current.text(for: $0) } ?? ""
+        lastConversion = Conversion(
+            original: typed + boundaryText, insertedCount: fixed.count + boundaryText.count,
+            fromLayoutID: layouts.current.id, exception: WordText.normalized(typed), taught: nil
+        )
+        history = [TypedWord(strokes: strokes, trailing: boundary.map { [$0] } ?? [], verdict: nil, layoutID: layouts.current.id)]
+        let replacement = Replacement(deleteCount: typed.count, text: fixed + boundaryText, layoutID: layouts.current.id)
+        return EngineOutput(suppressesEvent: true, replacement: replacement)
     }
 
     /// Return or Enter ends the line. A word that converts is retyped and the key pressed again
@@ -189,6 +211,10 @@ extension LadEngine {
         let segment = pendingStrokes(layouts: layouts) + word
         guard convertsOnReturn, verdict(for: word, layouts: layouts) == .convert,
               let original = layouts.current.text(for: segment), let inserted = layouts.other.text(for: segment) else {
+            if convertsOnReturn, let fix = fixCase(word, boundary: nil, layouts: layouts)?.replacement {
+                let replacement = Replacement(deleteCount: fix.deleteCount, text: fix.text, layoutID: fix.layoutID, followUpKey: key)
+                return EngineOutput(suppressesEvent: true, replacement: replacement, learnedWord: lesson)
+            }
             return EngineOutput(learnedWord: lesson)
         }
         self.layouts = layouts.swapped
@@ -350,16 +376,20 @@ extension LadEngine {
     private mutating func undo(_ conversion: Conversion, layouts: LayoutPair) -> EngineOutput {
         lastConversion = nil
         lessonFromLayoutID = nil
-        guard conversion.fromLayoutID == layouts.other.id else {
+        // A case fix stayed in the same layout; a conversion switches back.
+        let switchesBack = conversion.fromLayoutID == layouts.other.id
+        guard switchesBack || conversion.fromLayoutID == layouts.current.id else {
             reset()
             return .pass
         }
-        self.layouts = layouts.swapped
+        if switchesBack {
+            self.layouts = layouts.swapped
+        }
         if var last = history.popLast() {
-            if last.layoutID == layouts.current.id {
+            if switchesBack, last.layoutID == layouts.current.id {
                 last.layoutID = layouts.other.id
-                last.verdict = .keep
             }
+            last.verdict = .keep
             history = [last]
         }
         let replacement = Replacement(deleteCount: conversion.insertedCount, text: conversion.original, layoutID: conversion.fromLayoutID)

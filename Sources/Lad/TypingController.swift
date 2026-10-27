@@ -33,6 +33,7 @@ final class TypingController {
         self.selection = SelectionConverter(output: output)
         engine.isAutomatic = settings.isAutomatic
         engine.convertsOnReturn = settings.convertsOnReturn
+        engine.fixesTwoCapitals = settings.fixesTwoCapitals
         engine.exceptions = Set(settings.exceptions)
         engine.learnedWords = Set(settings.learnedWords)
         inputSources.onSelectionChange = { [weak self] layoutID in self?.layoutDidChange(to: layoutID) }
@@ -47,6 +48,7 @@ final class TypingController {
     var isTapRunning: Bool { tap?.isRunning ?? false }
     var isAutomatic: Bool { engine.isAutomatic }
     var convertsOnReturn: Bool { engine.convertsOnReturn }
+    var fixesTwoCapitals: Bool { engine.fixesTwoCapitals }
     /// The words never converted again, most recent first.
     var exceptions: [String] { settings.exceptions.reversed() }
     /// The words always converted (fixed by hand once), most recent first.
@@ -87,6 +89,12 @@ final class TypingController {
     func setConvertsOnReturn(_ converts: Bool) {
         settings.convertsOnReturn = converts
         engine.convertsOnReturn = converts
+        onStateChange?()
+    }
+
+    func setFixesTwoCapitals(_ fixes: Bool) {
+        settings.fixesTwoCapitals = fixes
+        engine.fixesTwoCapitals = fixes
         onStateChange?()
     }
 

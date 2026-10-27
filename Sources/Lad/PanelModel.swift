@@ -29,6 +29,9 @@ final class PanelModel: ObservableObject {
     @Published var convertsOnReturn = true {
         didSet { apply { controller.setConvertsOnReturn(convertsOnReturn) } }
     }
+    @Published var fixesTwoCapitals = true {
+        didSet { apply { controller.setFixesTwoCapitals(fixesTwoCapitals) } }
+    }
     @Published var playsSound = false {
         didSet { apply { settings.playsSound = playsSound } }
     }
@@ -61,6 +64,7 @@ final class PanelModel: ObservableObject {
         health = Self.health(of: controller)
         isAutomatic = controller.isAutomatic
         convertsOnReturn = controller.convertsOnReturn
+        fixesTwoCapitals = controller.fixesTwoCapitals
         exceptions = controller.exceptions
         learnedWords = controller.learnedWords
         playsSound = settings.playsSound

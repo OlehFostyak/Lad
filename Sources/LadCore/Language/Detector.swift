@@ -134,6 +134,12 @@ public struct Detector: Sendable {
         return otherScore > score(ofTyped: typed, in: typedModel).score
     }
 
+    /// Whether the word inside `text` is in the language's word list.
+    public func isListed(_ text: String, in language: Language) -> Bool {
+        guard let word = WordText.core(of: text, in: language) else { return false }
+        return models[language]?.contains(word) ?? false
+    }
+
     /// Words are typed lowercase or capitalized; ALL CAPS and camelCase are acronyms and code (RFC, TVs).
     public static func hasPlainCase(_ typed: String, in language: Language) -> Bool {
         typed.filter(language.isLetter).dropFirst().allSatisfy { !$0.isUppercase }

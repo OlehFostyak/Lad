@@ -19,6 +19,7 @@ final class Settings {
     private enum Key {
         static let automatic = "automaticSwitching"
         static let convertsOnReturn = "convertsOnReturn"
+        static let fixesTwoCapitals = "fixesTwoCapitals"
         static let exceptions = "exceptions"
         static let learnedWords = "learnedWords"
         static let playsSound = "playsSound"
@@ -36,7 +37,8 @@ final class Settings {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [
-            Key.automatic: true, Key.convertsOnReturn: true, Key.iconStyle: IconStyle.keyboard.rawValue,
+            Key.automatic: true, Key.convertsOnReturn: true, Key.fixesTwoCapitals: true,
+            Key.iconStyle: IconStyle.keyboard.rawValue,
         ])
         defaults.removeObject(forKey: Key.removedExcludedApps)
     }
@@ -49,6 +51,11 @@ final class Settings {
     var convertsOnReturn: Bool {
         get { defaults.bool(forKey: Key.convertsOnReturn) }
         set { defaults.set(newValue, forKey: Key.convertsOnReturn) }
+    }
+
+    var fixesTwoCapitals: Bool {
+        get { defaults.bool(forKey: Key.fixesTwoCapitals) }
+        set { defaults.set(newValue, forKey: Key.fixesTwoCapitals) }
     }
 
     var playsSound: Bool {
