@@ -6,7 +6,8 @@ app, Swift 6, built with the Command Line Tools only — never propose installin
 ## Commands
 
 - `make check` — build + all tests with warnings as errors and complete concurrency checking. Run before calling work done.
-- `make test`, `make coverage` (LadCore line coverage), `make eval` (detector quality; add `EVAL_FLAGS='--code <dir>'`).
+- `make test`, `make coverage` (LadCore line coverage), `make eval` (detector quality; add `EVAL_FLAGS='--code <dir>'`;
+  `lad-eval live` sweeps the live switching thresholds).
 - `make install` — release build, sign, install to ~/Applications/Lad.app, launch. Signing uses Lad's
   own "Lad Local Code Signing" identity in a password-locked keychain (`make setup-signing`), so the
   Accessibility grant survives rebuilds; the owner types that password, never ask for it.
@@ -18,10 +19,12 @@ app, Swift 6, built with the Command Line Tools only — never propose installin
 
 ## Layout
 
-- `Sources/LadCore` — pure logic, no AppKit: `LayoutTable` (UCKeyTranslate tables), `LanguageModel`
-  (word counts + character trigrams), `Detector` (verdicts), `LadEngine` (word tracking, chains,
-  undo, double Shift, Return, learning, case fixes), `CaseFix`, `Transliterator`/`CaseCycle`,
-  `Hotkey`, `LayoutMemory`, `UsageCounter`, `TypingRhythm`/`SourceFilter`. Tests in
+- `Sources/LadCore` — pure logic, no AppKit: `LayoutTable` (UCKeyTranslate tables), `WordTable`
+  (sorted word counts in one block, prefix totals), `LanguageModel` (word table + character
+  trigrams; `packed()` is the `.lad` file `make bundle` ships and the app maps), `Detector`
+  (verdicts, early switching), `LadEngine` (word tracking, chains, undo, double Shift, Return,
+  short replies, apostrophes, learning, case fixes, live switching), `CaseFix`,
+  `Transliterator`/`CaseCycle`, `Hotkey`, `LayoutMemory`, `UsageCounter`, `TypingRhythm`/`SourceFilter`. Tests in
   `Tests/LadCoreTests` use the real layout fixture and dictionaries.
 - `Sources/Lad` — AppKit glue, main-actor by default: `EventTap`, `KeyboardOutput`, `InputSources`,
   `FocusObserver`, `SelectionTransformer`, `TypingController`, `LayoutHint`, `StatusItemController`,
@@ -41,6 +44,7 @@ app, Swift 6, built with the Command Line Tools only — never propose installin
   `Tests/LintTests` and `make verify` (otool/nm on the binary, symbol allow-list) enforce this —
   keep them passing, extend them when adding APIs.
 - Hotkeys are ⌃⌥ + L/T/U (`Hotkey` in LadCore); Babak owns ⌃⌥A/J/D/P. Avoid Space chords.
-- Change detector thresholds only with `lad-eval sweep`/`quality` numbers before and after; a false
-  conversion of a correctly typed word is worse than a missed one.
+- Change detector thresholds only with `lad-eval sweep`/`quality`/`live` numbers before and after; a
+  false conversion of a correctly typed word is worse than a missed one. The lists are mapped from
+  the bundle, so more words cost disk, not memory.
 - Code and comments in English; README and UI strings in Ukrainian.
