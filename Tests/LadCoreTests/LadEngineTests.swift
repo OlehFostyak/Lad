@@ -381,3 +381,48 @@ struct LadEngineTests {
         #expect(engine.layouts == Fixture.typingInUS)
     }
 }
+
+@Suite("Apostrophes")
+struct ApostropheTests {
+    private let us = Fixture.us
+    private let ua = Fixture.ua
+
+    @Test("A word typed without its apostrophe converts with it, and an undo puts the keys back")
+    func addsApostrophe() throws {
+        var typist = Typist(Fixture.typingInUS)
+        let output = try #require(typist.type("vzx ", on: us).last)
+        #expect(output.replacement == Replacement(deleteCount: 3, text: "м'яч ", layoutID: ua.id))
+        let undo = typist.doubleShift()
+        #expect(undo.replacement == Replacement(deleteCount: 5, text: "vzx ", layoutID: us.id))
+        #expect(undo.learnedException == "vzx")
+    }
+
+    @Test("The apostrophe goes after the consonant, in any case", arguments: [
+        ("пять", "п'ять"), ("Мяч", "М'яч"), ("сімях", "сім'ях"), ("зїсти", "з'їсти"),
+    ])
+    func placesApostrophe(skipped: String, spelled: String) throws {
+        var typist = Typist(Fixture.typingInUS)
+        let output = try #require(typist.type(Fixture.retype(skipped, from: ua, to: us) + " ", on: us).last)
+        #expect(output.replacement?.text == spelled + " ")
+    }
+
+    @Test("Words that need no apostrophe, or are no word with one, are left as they are")
+    func leavesOthersAlone() throws {
+        var typist = Typist(Fixture.typingInUS)
+        let output = try #require(typist.type("ghbdsn ", on: us).last)
+        #expect(output.replacement?.text == "привіт ")
+        var mash = Typist(Fixture.typingInUS)
+        #expect(mash.type("qzx ", on: us).isEmpty)
+    }
+
+    @Test("At Return too, with the line's punctuation")
+    func addsApostropheAtReturn() throws {
+        var typist = Typist(Fixture.typingInUS)
+        typist.type("vzx", on: us)
+        #expect(typist.pressReturn().replacement == Replacement(deleteCount: 3, text: "м'яч", layoutID: ua.id, followUpKey: KeyStroke(keyCode: KeyCode.returnKey)))
+        var dotted = Typist(Fixture.typingInUS)
+        dotted.type("vzx/", on: us)
+        #expect(dotted.pressReturn().replacement?.text == "м'яч.")
+    }
+}
+

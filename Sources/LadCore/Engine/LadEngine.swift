@@ -20,6 +20,11 @@ public struct LadEngine: Sendable {
     /// Punctuation that may end a line right after a word that converts at Return, in the layout
     /// the word converts into.
     static let closingPunctuation: Set<Character> = [".", ",", "!", "?", ";", ":", ")", "…"]
+    /// Words with fewer letters never get a missing apostrophe added.
+    static let minApostropheLength = 3
+    /// Ukrainian letters an apostrophe may stand before (м'яч, п'ю, сім'є, з'їсти).
+    static let iotatedVowels: Set<Character> = ["я", "ю", "є", "ї"]
+    static let ukrainianVowels: Set<Character> = ["а", "е", "є", "и", "і", "ї", "о", "у", "ю", "я"]
 
     public private(set) var layouts: LayoutPair?
     public var detector: Detector?
@@ -120,7 +125,8 @@ extension LadEngine {
         let exception: String?
         /// By hand: the word this fix would teach Lad, learned only once the user types on.
         let taught: String?
-        /// A case fix: the keys as typed, which an undo puts back.
+        /// The keys as typed, when the fix changed them (a case fix, an added apostrophe): an undo
+        /// puts them back.
         var typedStrokes: [KeyStroke]?
     }
 
@@ -196,7 +202,8 @@ extension LadEngine {
         // A word fixed mid-way is learned whole only when it ends at a space, not at a digit or symbol.
         let lesson = layouts.current.text(for: boundary) == " " ? takeLesson(for: strokes, layouts: layouts) : nil
         lessonFromLayoutID = nil
-        var verdict = verdict(for: strokes, layouts: layouts)
+        let conversion = conversion(for: strokes, layouts: layouts)
+        var verdict = conversion.verdict
         // Only a space converts right away: punctuation after a word is too often code or a path
         // (src/, jwt-), so the word waits and converts along with the next one.
         if verdict == .convert, layouts.current.text(for: boundary) != " " {
@@ -204,7 +211,7 @@ extension LadEngine {
         }
         var output = EngineOutput.pass
         if verdict == .convert {
-            output = convertAutomatically(strokes, boundary: boundary, layouts: layouts)
+            output = convertAutomatically(strokes, into: conversion.converted, boundary: boundary, layouts: layouts)
         } else if layouts.current.text(for: boundary) == " ", let fix = fixCase(strokes, boundary: boundary, layouts: layouts) {
             output = fix
         } else {
@@ -256,9 +263,10 @@ extension LadEngine {
             return convertsOnReturn ? convertLastWord(endingLineWith: key, layouts: layouts) : .pass
         }
         let lesson = takeLesson(for: word, layouts: layouts)
-        let segment = pendingStrokes(in: history[...], layouts: layouts) + word
-        guard convertsOnReturn, verdict(for: word, layouts: layouts) == .convert,
-              let original = layouts.current.text(for: segment), let inserted = layouts.other.text(for: segment) else {
+        let pending = pendingStrokes(in: history[...], layouts: layouts)
+        let (verdict, converted) = conversion(for: word, layouts: layouts)
+        guard convertsOnReturn, verdict == .convert, let original = layouts.current.text(for: pending + word),
+              let inserted = layouts.other.text(for: pending + converted) else {
             if convertsOnReturn, let fix = fixCase(word, boundary: nil, layouts: layouts)?.replacement {
                 let replacement = Replacement(deleteCount: fix.deleteCount, text: fix.text, layoutID: fix.layoutID, followUpKey: key)
                 return EngineOutput(suppressesEvent: true, replacement: replacement, learnedWord: lesson)
@@ -275,10 +283,11 @@ extension LadEngine {
     private mutating func convertLastWord(endingLineWith key: KeyStroke, layouts: LayoutPair) -> EngineOutput {
         guard let last = history.last, last.verdict == .undecided, last.layoutID == layouts.current.id,
               let punctuation = layouts.other.text(for: last.trailing),
-              punctuation.allSatisfy(Self.closingPunctuation.contains),
-              verdict(for: last.strokes, layouts: layouts) == .convert else { return .pass }
-        let segment = pendingStrokes(in: history.dropLast(), layouts: layouts) + last.allStrokes
-        guard let original = layouts.current.text(for: segment), let inserted = layouts.other.text(for: segment) else {
+              punctuation.allSatisfy(Self.closingPunctuation.contains) else { return .pass }
+        let (verdict, converted) = conversion(for: last.strokes, layouts: layouts)
+        let pending = pendingStrokes(in: history.dropLast(), layouts: layouts)
+        guard verdict == .convert, let original = layouts.current.text(for: pending + last.allStrokes),
+              let inserted = layouts.other.text(for: pending + converted + last.trailing) else {
             return .pass
         }
         self.layouts = layouts.swapped
@@ -286,16 +295,40 @@ extension LadEngine {
         return EngineOutput(suppressesEvent: true, replacement: replacement)
     }
 
-    private func verdict(for strokes: [KeyStroke], layouts: LayoutPair) -> Verdict {
+    /// The verdict on the typed keys, and the keys they convert into: the same ones, or with the
+    /// apostrophe Ukrainian needs and the typist skipped (vzx is «мяч», no word; it converts as «м'яч»).
+    private func conversion(for strokes: [KeyStroke], layouts: LayoutPair) -> (verdict: Verdict, converted: [KeyStroke]) {
+        let verdict = verdict(for: strokes, layouts: layouts)
+        // Two keys are too often code ("d." is «вю», which «в'ю» would let through).
+        guard verdict != .convert, strokes.count >= Self.minApostropheLength, layouts.other.language == .ukrainian,
+              let apostrophe = layouts.other.stroke(for: WordText.apostrophe) ?? layouts.other.stroke(for: "ʼ"),
+              let other = layouts.other.text(for: strokes) else { return (verdict, strokes) }
+        let letters = Array(other.lowercased())
+        guard letters.count == strokes.count else { return (verdict, strokes) }
+        for index in letters.indices.dropFirst() where Self.iotatedVowels.contains(letters[index]) {
+            let before = letters[index - 1]
+            guard Language.ukrainian.isLetter(before), !Self.ukrainianVowels.contains(before), before != "ь" else { continue }
+            var converted = strokes
+            converted.insert(apostrophe, at: index)
+            if self.verdict(for: strokes, layouts: layouts, into: converted) == .convert {
+                return (.convert, converted)
+            }
+        }
+        return (verdict, strokes)
+    }
+
+    /// `converted`: the keys the word would convert into, when they differ from the typed ones.
+    private func verdict(for strokes: [KeyStroke], layouts: LayoutPair, into converted: [KeyStroke]? = nil) -> Verdict {
         guard isAutomatic, let typedLanguage = layouts.current.language, let otherLanguage = layouts.other.language,
-              let typed = layouts.current.text(for: strokes), let other = layouts.other.text(for: strokes) else { return .keep }
+              let typed = layouts.current.text(for: strokes),
+              let other = layouts.other.text(for: converted ?? strokes) else { return .keep }
         let normalized = WordText.normalized(typed)
         // On a Mac, Shift with Caps Lock still types capitals: a Caps Lock word is all caps whatever
         // was meant, so its case is no evidence (GHBDSN typed that way is ПРИВІТ). Short ones still
         // read as acronyms (CSV is no «СІМ»).
         let capsLocked = strokes.count > Self.maxCapsLockAcronymLength && strokes.allSatisfy(\.capsLock)
         let hasPlainCase = capsLocked || Detector.hasPlainCase(typed, in: typedLanguage)
-        if learnedWords.contains(normalized), !exceptions.contains(normalized), hasPlainCase {
+        if converted == nil, learnedWords.contains(normalized), !exceptions.contains(normalized), hasPlainCase {
             return .convert
         }
         guard let detector else { return .keep }
@@ -395,16 +428,20 @@ extension LadEngine {
 extension LadEngine {
     /// The boundary key has not reached the app: it is suppressed and retyped in the other layout
     /// after the word, together with the undecided words right before it that convert along.
-    private mutating func convertAutomatically(_ strokes: [KeyStroke], boundary: KeyStroke, layouts: LayoutPair) -> EngineOutput {
-        let segment = pendingStrokes(in: history[...], layouts: layouts) + strokes + [boundary]
-        guard let original = layouts.current.text(for: segment), let inserted = layouts.other.text(for: segment),
+    private mutating func convertAutomatically(
+        _ strokes: [KeyStroke], into converted: [KeyStroke], boundary: KeyStroke, layouts: LayoutPair
+    ) -> EngineOutput {
+        let pending = pendingStrokes(in: history[...], layouts: layouts)
+        guard let original = layouts.current.text(for: pending + strokes + [boundary]),
+              let inserted = layouts.other.text(for: pending + converted + [boundary]),
               let typedBoundary = layouts.current.text(for: boundary) else { return .pass }
         self.layouts = layouts.swapped
         lastConversion = Conversion(
             original: original, insertedCount: inserted.count, fromLayoutID: layouts.current.id,
-            exception: layouts.current.text(for: strokes).map(WordText.normalized), taught: nil
+            exception: layouts.current.text(for: strokes).map(WordText.normalized), taught: nil,
+            typedStrokes: converted == strokes ? nil : strokes
         )
-        history = [TypedWord(strokes: strokes, trailing: [boundary], verdict: nil, layoutID: layouts.other.id)]
+        history = [TypedWord(strokes: converted, trailing: [boundary], verdict: nil, layoutID: layouts.other.id)]
         let replacement = Replacement(
             deleteCount: original.count - typedBoundary.count, text: inserted, layoutID: layouts.other.id
         )
