@@ -6,13 +6,14 @@ Run with `make dictionaries` (python3 -I). Sources are downloaded once into tool
 - FrequencyWords 2018 (OpenSubtitles) by Hermit Dave: uk_full.txt and en_50k.txt.
   Code MIT, word lists CC-BY-SA-4.0.
 - VESUM (dict_uk by brown-uk) v6.8.6, dictionary data CC-BY-NC-SA-4.0 (its code is GPL-3.0):
-  dict_corp_vis.txt.bz2. Only real Ukrainian word forms are kept (the subtitle list carries many
-  Russian words), and it adds the apostrophe forms the subtitle tokenizer split apart.
+  dict_corp_vis.txt.bz2. Used only to tell which counted words are normative Ukrainian word
+  forms (the subtitle list carries many Russian words); no word comes from VESUM alone, so the
+  list holds only the CC-BY-SA counts.
 - Ukrainian Wikipedia word counts (dump of 2022-08-30) from wikipedia-word-frequency by Ilya
   Semenov (code MIT; Wikipedia text CC-BY-SA): ukwiki-2022-08-30.txt. It adds the common words
   films rarely say (ківі, смартфон); the subtitle words keep their own counts.
 
-Resources/Licenses.txt credits both sources and says what changed; keep it in step.
+Resources/Licenses.txt credits the sources and says what changed; keep it in step.
 
 Output lines are `word<TAB>count`, most frequent first, after `#` header lines.
 """
@@ -71,8 +72,6 @@ UK_SCALE = 1e9
 WIKI_MIN_COUNT = 50
 WIKI_MIN_LETTERS = 4
 WIKI_WEIGHT = 0.5
-# Apostrophe forms that neither corpus has come from VESUM alone; they get the smallest count.
-UK_APOSTROPHE_COUNT = 1
 
 EN_SINGLE_LETTERS = {"a", "i"}
 # The subtitle list has hundreds of two-letter tokens; most are noise (oj, ls, lt). Only real words
@@ -163,7 +162,7 @@ def build_uk() -> dict:
         if UK_WORD.match(form) and not any(t in VESUM_REJECT_TAGS for t in tags):
             (proper if "prop" in tags else common).add(form)
     words = {}
-    added = apostrophe_forms = 0
+    added = 0
     for form in common | proper:
         if form in subtitles:
             words[form] = max(1, round(subtitles[form] / subtitle_total * UK_SCALE))
@@ -171,12 +170,9 @@ def build_uk() -> dict:
               and ("'" in form or len(form) >= WIKI_MIN_LETTERS)):
             words[form] = max(1, round(WIKI_WEIGHT * wikipedia[form] / wikipedia_total * UK_SCALE))
             added += 1
-        elif "'" in form:
-            words[form] = UK_APOSTROPHE_COUNT
-            apostrophe_forms += 1
     dropped = sorted((c, w) for w, c in subtitles.items() if w not in words)[::-1][:25]
-    print(f"uk: {len(subtitles)} subtitle words, {len(words) - added - apostrophe_forms} in VESUM, "
-          f"{added} from Wikipedia, {apostrophe_forms} apostrophe forms", file=sys.stderr)
+    print(f"uk: {len(subtitles)} subtitle words, {len(words) - added} in VESUM, {added} from Wikipedia",
+          file=sys.stderr)
     print("uk: most frequent dropped: " + " ".join(f"{w}:{c}" for c, w in dropped), file=sys.stderr)
     return words
 
@@ -222,9 +218,9 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     write(OUT / "uk.tsv", build_uk(), [
         "Ukrainian word forms with OpenSubtitles 2018 counts (FrequencyWords, CC-BY-SA-4.0) and Ukrainian",
-        "Wikipedia counts (wikipedia-word-frequency, CC-BY-SA), per billion subtitle words, filtered by",
-        "VESUM / dict_uk v6.8.6 (brown-uk, CC-BY-NC-SA-4.0), which adds its apostrophe forms.",
-        "Non-commercial use only. Built by tools/build_dictionaries.py; sources in Resources/Licenses.txt.",
+        "Wikipedia counts (wikipedia-word-frequency; text CC-BY-SA), per billion subtitle words, kept",
+        "when VESUM / dict_uk v6.8.6 (brown-uk) lists them as normative forms. Shared under CC-BY-SA-4.0.",
+        "Built by tools/build_dictionaries.py; sources in Resources/Licenses.txt.",
     ])
     write(OUT / "en.tsv", build_en(), [
         "English words with OpenSubtitles 2018 counts (FrequencyWords, CC-BY-SA-4.0).",

@@ -1,44 +1,94 @@
-Lad: word list sources and licenses
+Lad: ліцензії та джерела словників
+==================================
 
-Lad's word lists, Contents/Resources/Dictionaries/en.lad and uk.lad, are packed from the en.tsv
-and uk.tsv that tools/build_dictionaries.py builds from the data below. The data is provided
-as-is, without warranties, as the licenses below state. Lad uses and shares it non-commercially.
+Код Lad поширюється під ліцензією MIT: його можна вільно використовувати,
+змінювати й поширювати, зберігаючи копірайт. Повний текст наприкінці.
 
+Словники Lad зібрані з відкритих частотних списків слів (субтитри фільмів
+і українська Вікіпедія) і поширюються під ліцензією CC BY-SA 4.0: їх можна
+копіювати й змінювати, якщо вказати авторів і зберегти ту саму ліцензію.
+Нижче перелічено, хто автори і що Lad змінив.
 
-FrequencyWords
-  By Hermit Dave, https://github.com/hermitdave/FrequencyWords (commit 525f9b5, 2018 lists).
-  Word counts from the OpenSubtitles 2018 corpus (OPUS, http://opus.nlpl.eu/OpenSubtitles2018.php;
-  subtitles from https://www.opensubtitles.org).
-  License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0),
-  https://creativecommons.org/licenses/by-sa/4.0/
-
-Ukrainian Wikipedia word counts
-  wikipedia-word-frequency by Ilya Semenov, https://github.com/IlyaSemenov/wikipedia-word-frequency
-  (commit b49c2ea, results/ukwiki-2022-08-30.txt), under the MIT License below. Counted from the
-  text of Ukrainian Wikipedia, https://uk.wikipedia.org, written by its contributors.
-  License of the text (the dump of 2022-08-30): Creative Commons Attribution-ShareAlike 3.0
-  Unported (CC BY-SA 3.0), https://creativecommons.org/licenses/by-sa/3.0/. Lad shares its
-  adaptation under CC BY-SA 4.0, as section 4(b) of that license allows.
-
-VESUM, Large Electronic Dictionary of Ukrainian (dict_uk)
-  Copyright (c) 2026 Andriy Rysin (arysin@gmail.com), Vasyl Starko, BrUK team.
-  https://vesum.nlp.net.ua/, https://github.com/brown-uk/dict_uk (release v6.8.6, dict_corp_vis.txt).
-  License of the dictionary data: Creative Commons Attribution-NonCommercial-ShareAlike 4.0
-  International (CC BY-NC-SA 4.0), https://creativecommons.org/licenses/by-nc-sa/4.0/
+Lad нікуди нічого не надсилає: ні словників, ні набраного тексту.
 
 
-What Lad changed
+1. Lad
+------
 
-en.tsv, from FrequencyWords en_50k: lowercased; only words of the letters a-z, with one-, two-
-and three-letter tokens limited to real words and common abbreviations; 64 contractions added
-with the count of a common word. Shared under CC BY-SA 4.0.
+Copyright (c) 2026 Oleh Fostyak. MIT License, full text at the end.
 
-uk.tsv, from FrequencyWords uk_full, the Wikipedia counts and VESUM: lowercased, apostrophes
-unified, counts per billion subtitle words. It keeps the subtitle words seen at least twice
-that VESUM lists as normative word forms; adds, at half their Wikipedia frequency, the
-normative forms Wikipedia uses at least 50 times (four letters or more, or with an apostrophe,
-no proper names); and adds VESUM's other forms with an apostrophe with a count of 1. It holds
-material from all three sources and is shared on the terms of their licenses, non-commercially.
+
+2. Word lists
+-------------
+
+Contents/Resources/Dictionaries/en.lad and uk.lad are packed from the en.tsv
+and uk.tsv that tools/build_dictionaries.py builds from the sources below.
+They are shared under Creative Commons Attribution-ShareAlike 4.0
+International (CC BY-SA 4.0), https://creativecommons.org/licenses/by-sa/4.0/,
+and provided as-is, without warranties, as that license states.
+
+2.1 FrequencyWords
+    By Hermit Dave, https://github.com/hermitdave/FrequencyWords
+    (commit 525f9b5, 2018 lists). License of the lists: CC BY-SA 4.0.
+    Counted from the OpenSubtitles 2018 corpus of OPUS,
+    http://opus.nlpl.eu/OpenSubtitles2018.php; the subtitles come from
+    https://www.opensubtitles.org.
+
+2.2 Ukrainian Wikipedia word counts
+    wikipedia-word-frequency by Ilya Semenov,
+    https://github.com/IlyaSemenov/wikipedia-word-frequency
+    (commit b49c2ea, results/ukwiki-2022-08-30.txt), MIT License
+    (full text at the end).
+    Counted from the text of Ukrainian Wikipedia, https://uk.wikipedia.org,
+    written by its contributors. The dump of 2022-08-30 is under CC BY-SA 3.0
+    Unported, https://creativecommons.org/licenses/by-sa/3.0/; Lad shares its
+    adaptation under CC BY-SA 4.0, as section 4(b) of that license allows.
+
+2.3 VESUM, Large Electronic Dictionary of Ukrainian (dict_uk)
+    Copyright (c) 2026 Andriy Rysin (arysin@gmail.com), Vasyl Starko,
+    BrUK team. https://vesum.nlp.net.ua/, https://github.com/brown-uk/dict_uk
+    (release v6.8.6). License of the data: CC BY-NC-SA 4.0,
+    https://creativecommons.org/licenses/by-nc-sa/4.0/.
+    Lad uses VESUM only to tell which counted words are normative Ukrainian
+    word forms; no word or other data of VESUM is in the lists.
+
+2.4 What Lad changed
+    en.tsv, from FrequencyWords en_50k: lowercased; only words of the letters
+    a-z, with one- to three-letter tokens limited to real words and common
+    abbreviations; 64 contractions added with the count of a common word.
+
+    uk.tsv, from FrequencyWords uk_full and the Wikipedia counts: lowercased,
+    apostrophes unified, counts per billion subtitle words. It keeps the
+    subtitle words seen at least twice, and adds at half their Wikipedia
+    frequency the words Wikipedia uses at least 50 times (four letters or
+    more, or with an apostrophe; no proper names). Either way, a word is kept
+    only if VESUM lists it as a normative form.
+
+
+3. License texts
+----------------
+
+MIT License (Lad)
+
+Copyright (c) 2026 Oleh Fostyak
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 
 MIT License (wikipedia-word-frequency)
