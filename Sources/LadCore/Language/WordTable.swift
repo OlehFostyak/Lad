@@ -104,16 +104,26 @@ struct WordTable: Sendable {
         }
         let layout = Layout(words: words, bytes: byteCount)
         guard magic == Self.magic, block.count >= layout.length else { return nil }
-        // Every word must end inside the bytes and after the one before, or lookups would read
-        // outside the block.
+        // Every word must end inside the bytes after the one before and sort after it, or lookups
+        // would read outside the block or miss; every count must be positive and the totals must
+        // add them up, or a prefix total would underflow.
         let wellFormed = block.withUnsafeBytes { raw in
-            var previous = 0
+            var start = 0
+            var previousWord: UnsafeRawBufferPointer?
+            var total: UInt64 = 0
+            guard raw.littleEndian(UInt64.self, at: layout.totals) == 0 else { return false }
             for index in 0..<words {
                 let end = Int(raw.littleEndian(UInt32.self, at: layout.ends + index * 4))
-                guard end > previous else { return false }
-                previous = end
+                guard end > start, end <= byteCount else { return false }
+                let word = raw.rebased((layout.bytes + start)..<(layout.bytes + end))
+                if let previousWord, compare(previousWord, word) >= 0 { return false }
+                let count = raw.littleEndian(UInt32.self, at: layout.counts + index * 4)
+                total += UInt64(count)
+                guard count > 0, raw.littleEndian(UInt64.self, at: layout.totals + (index + 1) * 8) == total else { return false }
+                previousWord = word
+                start = end
             }
-            return previous == byteCount
+            return start == byteCount
         }
         guard wellFormed else { return nil }
         self.storage = block.prefix(layout.length)

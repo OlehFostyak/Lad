@@ -53,15 +53,6 @@ final class TypingController {
         refreshLayouts()
     }
 
-    /// Terminals: a word before Return may be a password at a prompt that does not echo (sudo,
-    /// ssh), so Lad never retypes it there nor learns it from double Shift; the space still
-    /// converts words in prompts.
-    private static let terminals: Set<String> = [
-        "com.apple.Terminal", "dev.warp.Warp-Stable", "dev.warp.Warp", "dev.warp.Warp-Preview",
-        "com.googlecode.iterm2", "com.mitchellh.ghostty", "org.alacritty", "io.alacritty", "net.kovidgoyal.kitty",
-        "com.github.wez.wezterm", "co.zeit.hyper", "org.tabby", "com.raphaelamorim.rio",
-    ]
-
     var remembersAppLayouts: Bool { settings.remembersAppLayouts }
     /// macOS switches input sources per document itself, which would fight Lad's memory.
     var systemSwitchesPerDocument: Bool { settings.systemSwitchesPerDocument }
@@ -82,10 +73,10 @@ final class TypingController {
         onStateChange?()
     }
 
-    /// Terminals keep Return as it is, never switch a word while it is typed and learn nothing
-    /// from double Shift: the word may be a prompt's password.
+    /// Terminals, and apps with one built in, keep Return as it is, never switch a word while it is
+    /// typed and learn nothing from double Shift: the word may be a prompt's password (AppKind).
     private func updateAppRules() {
-        let inTerminal = Self.terminals.contains(frontBundleID ?? "")
+        let inTerminal = AppKind(bundleID: frontBundleID) != .regular
         engine.convertsOnReturn = settings.convertsOnReturn && !inTerminal
         engine.convertsWhileTyping = settings.convertsWhileTyping && !inTerminal
         engine.learnsWords = !inTerminal
@@ -208,6 +199,11 @@ final class TypingController {
         }
         if case .keyDown = event {
             syncFrontApp()
+        }
+        // A remote desktop or virtual machine: the keys belong to another computer.
+        guard AppKind(bundleID: frontBundleID) != .remote else {
+            engine.reset()
+            return false
         }
         if let hotkey = Hotkey.matching(event) {
             // A held shortcut repeats; the repeats are swallowed too, but only the first press acts.

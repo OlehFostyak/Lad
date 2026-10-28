@@ -568,10 +568,21 @@ struct LiveSwitchingTests {
         let undo = typist.doubleShift()
         #expect(undo.replacement == Replacement(deleteCount: 4, text: "ghbd", layoutID: us.id))
         #expect(undo.isUndo)
+        // «ghbdsn» is no English word, so the exception is not stored, only kept in memory.
         let end = typist.type("sn ", on: us)
-        #expect(end.first?.learnedException == "ghbdsn")
-        #expect(end.allSatisfy { $0.replacement == nil })
+        #expect(end.allSatisfy { $0.replacement == nil && $0.learnedException == nil })
+        #expect(typist.engine.exceptions.contains("ghbdsn"))
         #expect(typist.type("ghbdsn ", on: us).isEmpty)
+    }
+
+    @Test("A turned-back word that is no word is kept as an exception in memory only")
+    func keepsMashInMemory() {
+        var typist = typist(Fixture.typingInUS)
+        typist.type("ghbd", on: us)
+        #expect(typist.doubleShift().isUndo)
+        let end = typist.type("qwzxkvmtpl ", on: us)
+        #expect(end.allSatisfy { $0.learnedException == nil })
+        #expect(typist.engine.exceptions.contains("ghbdqwzxkvmtpl"))
     }
 
     @Test("Undecided words right before it switch along")

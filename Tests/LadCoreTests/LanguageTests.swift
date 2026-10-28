@@ -192,4 +192,24 @@ struct PackedModelTests {
         broken[16] = 0xFF
         #expect(throws: LanguageModel.LoadError.malformedPack) { try LanguageModel(language: .english, packed: broken) }
     }
+
+    @Test("Counts, totals and word order that do not add up are rejected")
+    func rejectsInconsistentPacks() throws {
+        let packed = try #require(Fixture.models.first { $0.language == .english }).packed()
+        let words = Int(packed.withUnsafeBytes { $0.littleEndian(UInt32.self, at: 4) })
+        let counts = 16 + (words * 4).roundedUpToEight
+        let totals = counts + (words * 4).roundedUpToEight
+        let bytes = totals + (words + 1) * 8
+        // A zero count, a total out of step, and the first two words' first bytes swapped.
+        var zeroCount = packed
+        for offset in 0..<4 { zeroCount[counts + offset] = 0 }
+        var badTotal = packed
+        badTotal[totals + 8 * 3] ^= 0x01
+        var unsorted = packed
+        let second = Int(packed.withUnsafeBytes { $0.littleEndian(UInt32.self, at: 16) })
+        unsorted.swapAt(bytes, bytes + second)
+        for block in [zeroCount, badTotal, unsorted] where block != packed {
+            #expect(throws: LanguageModel.LoadError.malformedPack) { try LanguageModel(language: .english, packed: block) }
+        }
+    }
 }

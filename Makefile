@@ -23,6 +23,10 @@ SWIFT       ?= swift
 PYTHON      ?= python3
 FIXTURE     := $(PKG)/Tests/LadCoreTests/Fixtures/layouts.json
 SYMBOL_ALLOWLIST := $(PKG)/tools/allowed-symbols.txt
+# The imports the allow-list covers: every non-Swift symbol, and Foundation's Swift API (file and
+# URL access such as Data(contentsOf:) or write(to:) lives there). The Swift runtime and standard
+# library are left out.
+IMPORTS_CHECKED := awk '!/^_\$$s/ || /^_\$$s10Foundation/'
 
 # Extra SwiftPM flags; `SWIFTPM_FLAGS=--build-system native` is the fallback if a CLT update breaks
 # the default swiftbuild engine.
@@ -143,9 +147,10 @@ dictionaries:
 # diff before committing it: every new symbol is a new capability (make verify enforces the list).
 symbols: build
 	@bin="$$($(SWIFT) build $(SPM) -c $(CONFIG) --show-bin-path)/$(NAME)"; \
-	{ echo "# Non-Swift symbols the Lad binary may import (make verify). Regenerate with make symbols"; \
-	  echo "# and review the diff: a new symbol is a new capability."; \
-	  nm -u "$$bin" | grep -v '^_\$$s' | LC_ALL=C sort -u; } > "$(SYMBOL_ALLOWLIST)"; \
+	{ echo "# Non-Swift symbols and Swift Foundation API the Lad binary may import (make verify)."; \
+	  echo "# Regenerate with make symbols and review the diff: a new symbol is a new capability."; \
+	  echo "# xcrun swift-demangle < tools/allowed-symbols.txt reads the Foundation ones."; \
+	  nm -u "$$bin" | $(IMPORTS_CHECKED) | LC_ALL=C sort -u; } > "$(SYMBOL_ALLOWLIST)"; \
 	echo "wrote $(SYMBOL_ALLOWLIST) ($$(grep -vc '^#' "$(SYMBOL_ALLOWLIST)") symbols)"
 
 # Once: creates the signing keychain and identity. Interactive (asks for a new password).
@@ -238,7 +243,7 @@ verify:
 	echo "  ok: only system frameworks; no network or process-spawning symbols"; \
 	allowed="$$(mktemp)"; \
 	grep -v '^#' "$(SYMBOL_ALLOWLIST)" | LC_ALL=C sort -u > "$$allowed"; \
-	unexpected="$$(nm -u "$$binary" | grep -v '^_\$$s' | LC_ALL=C sort -u | LC_ALL=C comm -23 - "$$allowed")"; \
+	unexpected="$$(nm -u "$$binary" | $(IMPORTS_CHECKED) | LC_ALL=C sort -u | LC_ALL=C comm -23 - "$$allowed")"; \
 	rm -f "$$allowed"; \
 	if [ -n "$$unexpected" ]; then \
 	  echo "error: the binary imports symbols missing from tools/allowed-symbols.txt (review them, then make symbols):" >&2; \

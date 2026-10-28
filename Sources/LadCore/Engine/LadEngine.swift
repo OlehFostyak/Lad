@@ -552,12 +552,17 @@ extension LadEngine {
     }
 
     /// The end of a word whose live switch was turned back: it becomes an exception, so it neither
-    /// converts early nor at its end again.
+    /// converts early nor at its end again. Only its first letters were judged, so it is stored only
+    /// if it is a word, listed or word-like, in its layout; anything else (a password typed in a
+    /// visible field) stays an exception in memory, until Lad quits.
     private mutating func keepHeldWord(_ strokes: [KeyStroke], layouts: LayoutPair) -> EngineOutput {
         holdsWord = false
-        guard let typed = layouts.current.text(for: strokes) else { return .pass }
+        guard let typed = layouts.current.text(for: strokes), let language = layouts.current.language else { return .pass }
         let exception = WordText.normalized(typed)
         exceptions.insert(exception)
+        guard let detector, detector.isListed(typed, in: language) || detector.looksLikeWord(typed, in: language) else {
+            return .pass
+        }
         var output = EngineOutput(learnedException: exception)
         if learnedWords.remove(exception) != nil {
             output.forgottenWord = exception
