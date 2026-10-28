@@ -27,10 +27,14 @@ public struct DetectorConfig: Sendable, Equatable {
     public var unlistedMinimumLength: Int
     /// ...and spells at least this well (log probability per symbol).
     public var unlistedMinimumScore: Double
+    /// A word fixed by hand that is not listed is learned when it spells at least this well: real
+    /// slang and names do (кринж, Фостяк), keyboard mash does not (йячмцф).
+    public var learnableMinimumScore: Double
 
     public init(
         margin: Double, shortMargin: Double, shortLength: Int, listedMargin: Double, undecidedBand: Double,
-        unlistedLogShare: [Language: Double], unlistedMinimumLength: Int, unlistedMinimumScore: Double
+        unlistedLogShare: [Language: Double], unlistedMinimumLength: Int, unlistedMinimumScore: Double,
+        learnableMinimumScore: Double
     ) {
         self.margin = margin
         self.shortMargin = shortMargin
@@ -40,12 +44,13 @@ public struct DetectorConfig: Sendable, Equatable {
         self.unlistedLogShare = unlistedLogShare
         self.unlistedMinimumLength = unlistedMinimumLength
         self.unlistedMinimumScore = unlistedMinimumScore
+        self.learnableMinimumScore = learnableMinimumScore
     }
 
     public static let standard = DetectorConfig(
         margin: 5, shortMargin: 6, shortLength: 2, listedMargin: 2, undecidedBand: 3,
         unlistedLogShare: [.english: log(0.03), .ukrainian: log(0.1)],
-        unlistedMinimumLength: 5, unlistedMinimumScore: -2.6
+        unlistedMinimumLength: 5, unlistedMinimumScore: -2.6, learnableMinimumScore: -3.5
     )
 }
 
@@ -145,6 +150,24 @@ public struct Detector: Sendable {
     public func isListed(_ text: String, in language: Language) -> Bool {
         guard let word = WordText.core(of: text, in: language) else { return false }
         return models[language]?.contains(word) ?? false
+    }
+
+    /// Whether the word inside `text`, listed or not, spells like a word of the language: at least
+    /// three letters that the character model finds as likely as the words Lad converts into.
+    public func looksLikeWord(_ text: String, in language: Language) -> Bool {
+        spells(text, in: language, atLeast: config.unlistedMinimumScore)
+    }
+
+    /// Whether a word fixed by hand may be learned in this spelling: listed, or at least three
+    /// letters that spell like the language's words, as slang and names do.
+    public func isLearnable(_ text: String, in language: Language) -> Bool {
+        isListed(text, in: language) || spells(text, in: language, atLeast: config.learnableMinimumScore)
+    }
+
+    private func spells(_ text: String, in language: Language, atLeast score: Double) -> Bool {
+        guard let word = WordText.core(of: text, in: language), word.filter(language.isLetter).count >= 3,
+              let model = models[language] else { return false }
+        return model.spellingScore(of: word) >= score
     }
 
     /// Words are typed lowercase or capitalized; ALL CAPS and camelCase are acronyms and code (RFC, TVs).

@@ -461,3 +461,47 @@ struct ShortReplyTests {
         #expect(code.pressReturn().replacement == nil)
     }
 }
+
+@Suite("Learning words outside the dictionary")
+struct UnlistedLearningTests {
+    private let us = Fixture.us
+    private let ua = Fixture.ua
+
+    /// Types the word in the wrong layout, fixes it with double Shift, types on; returns what was learned.
+    private func learn(_ word: String, typing typist: inout Typist) -> String? {
+        let typed = Fixture.retype(word, from: ua, to: us)
+        #expect(typist.type(typed + " ", on: us).isEmpty, "\(typed) converted by itself")
+        #expect(typist.doubleShift().replacement?.text == word + " ")
+        return typist.type("я", on: ua).first?.learnedWord
+    }
+
+    @Test("A word that spells like Ukrainian is learned, then converts by itself", arguments: ["реді", "кринж"])
+    func learnsWordLikeWord(word: String) throws {
+        var typist = Typist(Fixture.typingInUS)
+        let typed = Fixture.retype(word, from: ua, to: us)
+        #expect(learn(word, typing: &typist) == typed)
+        typist.engine.reset()
+        typist.engine.currentLayoutDidChange(to: us.id)
+        let output = try #require(typist.type(typed + " ", on: us).last)
+        #expect(output.replacement?.text == word + " ")
+    }
+
+    @Test("Keyboard mash is never learned")
+    func skipsMash() {
+        var typist = Typist(Fixture.typingInUS)
+        #expect(learn("йячмцф", typing: &typist) == nil)
+        #expect(typist.engine.learnedWords.isEmpty)
+    }
+
+    @Test("Nothing is learned where learning is off (terminals)")
+    func skipsWhenOff() {
+        var typist = Typist(Fixture.typingInUS)
+        typist.engine.learnsWords = false
+        #expect(learn("реді", typing: &typist) == nil)
+        var listed = Typist(Fixture.typingInUS, detector: Fixture.cautiousDetector)
+        listed.engine.learnsWords = false
+        listed.type("ghbdsn ", on: us)
+        #expect(listed.doubleShift().replacement?.text == "привіт ")
+        #expect(listed.type("я", on: ua).first?.learnedWord == nil)
+    }
+}

@@ -40,6 +40,9 @@ public struct LadEngine: Sendable {
     public var convertsOnReturn = true
     /// "ПРивіт" becomes "Привіт" at the space (when the fixed word is listed).
     public var fixesTwoCapitals = true
+    /// Off: double Shift still fixes words but teaches nothing (in terminals, where the word may be
+    /// a password typed at a prompt).
+    public var learnsWords = true
     /// Normalized typed words never to convert (the user turned them back).
     public var exceptions: Set<String> = []
     /// Normalized typed words always to convert (the user fixed them by hand).
@@ -424,18 +427,20 @@ extension LadEngine {
     }
 
     /// A fixed word worth learning: long enough, no code token, not a word of the layout it was
-    /// typed in, and a listed word once converted. So keyboard mash, and a password fixed by hand,
+    /// typed in, and once converted a listed word, or one that spells like a word (реді, names)
+    /// while the typed keys spell like none. So keyboard mash and random passwords fixed by hand
     /// are never learned (or stored).
     private func lesson(typed: String, in typedTable: LayoutTable, converted: String, in convertedTable: LayoutTable) -> String? {
-        guard let detector, let typedLanguage = typedTable.language, let convertedLanguage = convertedTable.language else {
+        guard learnsWords, let detector, let typedLanguage = typedTable.language, let convertedLanguage = convertedTable.language else {
             return nil
         }
         let word = WordText.normalized(typed)
         guard word.count >= Self.minLearnedLength,
               !(typedLanguage == .english && Detector.codeTokens.contains(word)),
-              !detector.isListed(typed, in: typedLanguage),
-              detector.isListed(converted, in: convertedLanguage) else { return nil }
-        return word
+              !detector.isListed(typed, in: typedLanguage) else { return nil }
+        let isWord = detector.isListed(converted, in: convertedLanguage)
+            || (detector.isLearnable(converted, in: convertedLanguage) && !detector.looksLikeWord(typed, in: typedLanguage))
+        return isWord ? word : nil
     }
 
     /// Adds a word to the learned words; it stops being an exception.

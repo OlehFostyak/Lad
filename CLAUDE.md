@@ -33,10 +33,11 @@ app, Swift 6, built with the Command Line Tools only — never propose installin
 - Privacy is the point of this app: no networking APIs, no `print`, logging only through the fixed
   `LogEvent`s in Log.swift. Persisted (Settings.swift only): switches, the two word lists the user
   builds with double Shift (exceptions, learned words — the only typed text on disk, shown in the
-  panel; learned words must be dictionary words), bundle ID → layout ID per app, and per-day fix
-  counts. Nothing under secure input reaches the engine. Keys other programs type are dropped with
-  the rest of their word: caught by sender PID, or by rhythm from the fifth fast press (the engine
-  then forgets the first four). Return never converts in terminals (password prompts).
+  panel; learned words are listed or word-like, never from a terminal), bundle ID → layout ID per
+  app, and per-day fix counts. Nothing under secure input reaches the engine. Keys other programs
+  type are dropped with the rest of their word: caught by sender PID, or by rhythm from the fifth
+  fast press (the engine then forgets the first four). Return never converts in terminals
+  (password prompts).
   `Tests/LintTests` and `make verify` (otool/nm on the binary, symbol allow-list) enforce this —
   keep them passing, extend them when adding APIs.
 - Hotkeys are ⌃⌥ + L/T/U (`Hotkey` in LadCore); Babak owns ⌃⌥A/J/D/P. Avoid Space chords.

@@ -54,7 +54,8 @@ final class TypingController {
     }
 
     /// Terminals: a word before Return may be a password at a prompt that does not echo (sudo,
-    /// ssh), so Lad never retypes it there; the space still converts words in prompts.
+    /// ssh), so Lad never retypes it there nor learns it from double Shift; the space still
+    /// converts words in prompts.
     private static let terminals: Set<String> = [
         "com.apple.Terminal", "dev.warp.Warp-Stable", "dev.warp.Warp", "dev.warp.Warp-Preview",
         "com.googlecode.iterm2", "com.mitchellh.ghostty", "org.alacritty", "io.alacritty", "net.kovidgoyal.kitty",
@@ -81,8 +82,11 @@ final class TypingController {
         onStateChange?()
     }
 
+    /// Terminals keep Return as it is and learn nothing from double Shift: a prompt's password.
     private func updateReturnConversion() {
-        engine.convertsOnReturn = settings.convertsOnReturn && !Self.terminals.contains(frontBundleID ?? "")
+        let inTerminal = Self.terminals.contains(frontBundleID ?? "")
+        engine.convertsOnReturn = settings.convertsOnReturn && !inTerminal
+        engine.learnsWords = !inTerminal
     }
 
     var showsLayoutHint: Bool { settings.showsLayoutHint }
