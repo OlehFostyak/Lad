@@ -34,6 +34,9 @@ final class PanelModel: ObservableObject {
     @Published var convertsOnReturn = true {
         didSet { apply { controller.setConvertsOnReturn(convertsOnReturn) } }
     }
+    @Published var convertsWhileTyping = false {
+        didSet { apply { controller.setConvertsWhileTyping(convertsWhileTyping) } }
+    }
     @Published var fixesTwoCapitals = true {
         didSet { apply { controller.setFixesTwoCapitals(fixesTwoCapitals) } }
     }
@@ -75,6 +78,7 @@ final class PanelModel: ObservableObject {
         health = Self.health(of: controller)
         isAutomatic = controller.isAutomatic
         convertsOnReturn = controller.convertsOnReturn
+        convertsWhileTyping = controller.convertsWhileTyping
         fixesTwoCapitals = controller.fixesTwoCapitals
         remembersAppLayouts = controller.remembersAppLayouts
         showsLayoutHint = controller.showsLayoutHint

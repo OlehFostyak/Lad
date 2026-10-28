@@ -172,6 +172,7 @@ _swift_deallocClassInstance
 _swift_deallocObject
 _swift_deletedMethodError
 _swift_dynamicCast
+_swift_dynamicCastClass
 _swift_dynamicCastObjCClass
 _swift_dynamicCastUnknownClassUnconditional
 _swift_endAccess

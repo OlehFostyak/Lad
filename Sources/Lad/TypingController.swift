@@ -49,7 +49,7 @@ final class TypingController {
         observeWorkspace()
         frontProcessID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         frontBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        updateReturnConversion()
+        updateAppRules()
         refreshLayouts()
     }
 
@@ -82,10 +82,12 @@ final class TypingController {
         onStateChange?()
     }
 
-    /// Terminals keep Return as it is and learn nothing from double Shift: a prompt's password.
-    private func updateReturnConversion() {
+    /// Terminals keep Return as it is, never switch a word while it is typed and learn nothing
+    /// from double Shift: the word may be a prompt's password.
+    private func updateAppRules() {
         let inTerminal = Self.terminals.contains(frontBundleID ?? "")
         engine.convertsOnReturn = settings.convertsOnReturn && !inTerminal
+        engine.convertsWhileTyping = settings.convertsWhileTyping && !inTerminal
         engine.learnsWords = !inTerminal
     }
 
@@ -106,6 +108,7 @@ final class TypingController {
     var isTapRunning: Bool { tap?.isRunning ?? false }
     var isAutomatic: Bool { engine.isAutomatic }
     var convertsOnReturn: Bool { settings.convertsOnReturn }
+    var convertsWhileTyping: Bool { settings.convertsWhileTyping }
     var fixesTwoCapitals: Bool { engine.fixesTwoCapitals }
     /// The words never converted again, most recent first.
     var exceptions: [String] { settings.exceptions.reversed() }
@@ -146,7 +149,13 @@ final class TypingController {
 
     func setConvertsOnReturn(_ converts: Bool) {
         settings.convertsOnReturn = converts
-        updateReturnConversion()
+        updateAppRules()
+        onStateChange?()
+    }
+
+    func setConvertsWhileTyping(_ converts: Bool) {
+        settings.convertsWhileTyping = converts
+        updateAppRules()
         onStateChange?()
     }
 
@@ -394,7 +403,7 @@ final class TypingController {
         guard bundleID != Bundle.main.bundleIdentifier else { return }
         frontProcessID = processID
         frontBundleID = bundleID
-        updateReturnConversion()
+        updateAppRules()
         focus.observe(processID: processID)
         restoreLayout(for: bundleID)
         // Apps can keep their own input source: re-read it rather than trust the engine's.

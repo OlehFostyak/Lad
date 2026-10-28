@@ -505,3 +505,79 @@ struct UnlistedLearningTests {
         #expect(listed.type("я", on: ua).first?.learnedWord == nil)
     }
 }
+
+@Suite("Live switching")
+struct LiveSwitchingTests {
+    private let us = Fixture.us
+    private let ua = Fixture.ua
+
+    private func typist(_ layouts: LayoutPair) -> Typist {
+        var typist = Typist(layouts)
+        typist.engine.convertsWhileTyping = true
+        return typist
+    }
+
+    @Test("A Ukrainian word typed in U.S. converts before its end, and the rest is typed in Ukrainian")
+    func convertsUkrainianEarly() throws {
+        var typist = typist(Fixture.typingInUS)
+        let outputs = typist.type("ghbdsn ", on: us)
+        let output = try #require(outputs.first)
+        #expect(outputs.count == 1)
+        #expect(output.suppressesEvent)
+        #expect(output.replacement == Replacement(deleteCount: 3, text: "прив", layoutID: ua.id))
+        #expect(typist.engine.layouts?.current.id == ua.id)
+    }
+
+    @Test("An English word typed in Ukrainian converts before its end")
+    func convertsEnglishEarly() throws {
+        var typist = typist(Fixture.typingInUA)
+        let output = try #require(typist.type("руддщ ", on: ua).first)
+        #expect(output.replacement?.layoutID == us.id)
+        #expect(output.replacement.map { $0.text.count - $0.deleteCount } == 1)
+        #expect("hello".hasPrefix(output.replacement?.text ?? "-"))
+    }
+
+    @Test("Words typed in the right layout, and code, never switch early")
+    func keepsRightWords() {
+        var english = typist(Fixture.typingInUS)
+        #expect(english.type("hello world, this is git kubectl get pods src csv ", on: us).isEmpty)
+        var ukrainian = typist(Fixture.typingInUA)
+        #expect(ukrainian.type("привіт, як справи ківі ", on: ua).isEmpty)
+    }
+
+    @Test("Off by default")
+    func offByDefault() {
+        var typist = Typist(Fixture.typingInUS)
+        #expect(typist.type("ghbd", on: us).isEmpty)
+    }
+
+    @Test("Double Shift after the word turns the whole switch back and keeps the word an exception")
+    func undoesAfterWord() throws {
+        var typist = typist(Fixture.typingInUS)
+        typist.type("ghbdsn ", on: us)
+        let undo = typist.doubleShift()
+        #expect(undo.replacement == Replacement(deleteCount: 7, text: "ghbdsn ", layoutID: us.id))
+        #expect(undo.learnedException == "ghbdsn")
+        #expect(typist.type("ghbdsn ", on: us).isEmpty)
+    }
+
+    @Test("Double Shift mid-word turns the switch back; the word stays and becomes an exception")
+    func undoesMidWord() throws {
+        var typist = typist(Fixture.typingInUS)
+        typist.type("ghbd", on: us)
+        let undo = typist.doubleShift()
+        #expect(undo.replacement == Replacement(deleteCount: 4, text: "ghbd", layoutID: us.id))
+        #expect(undo.isUndo)
+        let end = typist.type("sn ", on: us)
+        #expect(end.first?.learnedException == "ghbdsn")
+        #expect(end.allSatisfy { $0.replacement == nil })
+        #expect(typist.type("ghbdsn ", on: us).isEmpty)
+    }
+
+    @Test("Undecided words right before it switch along")
+    func convertsPendingAlong() throws {
+        var typist = typist(Fixture.typingInUS)
+        let output = try #require(typist.type("z ghbdsn", on: us).first)
+        #expect(output.replacement == Replacement(deleteCount: 5, text: "я прив", layoutID: ua.id))
+    }
+}

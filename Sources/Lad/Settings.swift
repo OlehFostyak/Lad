@@ -20,6 +20,7 @@ final class Settings {
     private enum Key {
         static let automatic = "automaticSwitching"
         static let convertsOnReturn = "convertsOnReturn"
+        static let convertsWhileTyping = "convertsWhileTyping"
         static let fixesTwoCapitals = "fixesTwoCapitals"
         static let remembersAppLayouts = "remembersAppLayouts"
         static let showsLayoutHint = "showsLayoutHint"
@@ -57,6 +58,12 @@ final class Settings {
     var convertsOnReturn: Bool {
         get { defaults.bool(forKey: Key.convertsOnReturn) }
         set { defaults.set(newValue, forKey: Key.convertsOnReturn) }
+    }
+
+    /// Off by default (unregistered): live switching is the bolder mode.
+    var convertsWhileTyping: Bool {
+        get { defaults.bool(forKey: Key.convertsWhileTyping) }
+        set { defaults.set(newValue, forKey: Key.convertsWhileTyping) }
     }
 
     var fixesTwoCapitals: Bool {

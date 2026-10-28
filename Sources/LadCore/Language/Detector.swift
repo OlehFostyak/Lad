@@ -30,11 +30,16 @@ public struct DetectorConfig: Sendable, Equatable {
     /// A word fixed by hand that is not listed is learned when it spells at least this well: real
     /// slang and names do (кринж, Фостяк), keyboard mash does not (йячмцф).
     public var learnableMinimumScore: Double
+    /// Live switching: a word converts while typed once it has this many letters...
+    public var liveMinimumLength: Int
+    /// ...and the words the other layout's letters begin are this much more likely than the typed
+    /// letters as the beginning of an unlisted word.
+    public var liveMargin: Double
 
     public init(
         margin: Double, shortMargin: Double, shortLength: Int, listedMargin: Double, undecidedBand: Double,
         unlistedLogShare: [Language: Double], unlistedMinimumLength: Int, unlistedMinimumScore: Double,
-        learnableMinimumScore: Double
+        learnableMinimumScore: Double, liveMinimumLength: Int, liveMargin: Double
     ) {
         self.margin = margin
         self.shortMargin = shortMargin
@@ -45,12 +50,15 @@ public struct DetectorConfig: Sendable, Equatable {
         self.unlistedMinimumLength = unlistedMinimumLength
         self.unlistedMinimumScore = unlistedMinimumScore
         self.learnableMinimumScore = learnableMinimumScore
+        self.liveMinimumLength = liveMinimumLength
+        self.liveMargin = liveMargin
     }
 
     public static let standard = DetectorConfig(
         margin: 5, shortMargin: 6, shortLength: 2, listedMargin: 2, undecidedBand: 3,
         unlistedLogShare: [.english: log(0.03), .ukrainian: log(0.1)],
-        unlistedMinimumLength: 5, unlistedMinimumScore: -2.6, learnableMinimumScore: -3.5
+        unlistedMinimumLength: 5, unlistedMinimumScore: -2.6, learnableMinimumScore: -3.5,
+        liveMinimumLength: 4, liveMargin: 10
     )
 }
 
@@ -131,6 +139,27 @@ public struct Detector: Sendable {
             verdict = .keep
         }
         return Evaluation(typedScore: typedScore, otherScore: otherScore, margin: margin, verdict: verdict)
+    }
+
+    /// Live switching: whether the word being typed converts before it ends. Its letters so far
+    /// must begin no listed word of their language, and the same keys must begin listed words of
+    /// the other language far likelier than these letters are as the start of an unlisted word.
+    /// Letters only (a bracket or comma is too often code), plain case, never what begins a code
+    /// token or a word the user turned back.
+    public func convertsEarly(
+        typed: String, in typedLanguage: Language, other: String, in otherLanguage: Language, exceptions: Set<String> = []
+    ) -> Bool {
+        guard let typedModel = models[typedLanguage], let otherModel = models[otherLanguage],
+              typed.count >= config.liveMinimumLength, typed.allSatisfy(typedLanguage.isLetter),
+              Self.hasPlainCase(typed, in: typedLanguage) else { return false }
+        let typedPrefix = WordText.normalized(typed)
+        let otherPrefix = WordText.normalized(other)
+        guard typedModel.prefixLogFrequency(of: typedPrefix) == nil,
+              !(typedLanguage == .english && Self.codeTokens.contains { $0.hasPrefix(typedPrefix) }),
+              !exceptions.contains(where: { $0.hasPrefix(typedPrefix) }),
+              let otherFrequency = otherModel.prefixLogFrequency(of: otherPrefix) else { return false }
+        let typedScore = (config.unlistedLogShare[typedLanguage] ?? log(0.05)) + typedModel.prefixSpellingLogProbability(of: typedPrefix)
+        return otherFrequency - typedScore >= config.liveMargin
     }
 
     /// Whether a pending undecided word converts along with the converted word after it.

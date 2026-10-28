@@ -62,6 +62,10 @@ struct PanelView: View {
     private var fixes: some View {
         SwitchRow(title: "Автоматичне перемикання", detail: "Виправляти слово на пробілі", isOn: $model.isAutomatic)
         SwitchRow(title: "Виправляти й на Enter", detail: "Перед відправкою повідомлення", isOn: $model.convertsOnReturn)
+        SwitchRow(
+            title: "Перемикати під час набору", detail: "Щойно початок слова явно з іншої розкладки, не чекаючи пробілу",
+            isOn: $model.convertsWhileTyping
+        )
         SwitchRow(title: "Виправляти ДВі великі", detail: "«ПРивіт» → «Привіт»", isOn: $model.fixesTwoCapitals)
     }
 

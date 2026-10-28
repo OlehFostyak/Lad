@@ -83,6 +83,18 @@ public struct LanguageModel: Sendable {
         words.count(of: word).map { log(Double($0)) - logTotal }
     }
 
+    /// Natural log of the share of running text taken by the listed words that start with
+    /// `prefix`; nil when no listed word does.
+    public func prefixLogFrequency(of prefix: String) -> Double? {
+        let (words, count) = self.words.totals(startingWith: prefix)
+        return words == 0 ? nil : log(Double(count)) - logTotal
+    }
+
+    /// Natural log of the probability that a word starts with `prefix`, under the character model.
+    public func prefixSpellingLogProbability(of prefix: String) -> Double {
+        spelling.logProbability(ofPrefix: prefix)
+    }
+
     /// Natural log of the spelling's probability under the character model, end of word included.
     public func spellingLogProbability(of word: String) -> Double {
         spelling.logProbability(of: word)
@@ -196,6 +208,17 @@ struct CharacterModel: Sendable {
     /// Natural log probability of the spelling; -infinity when it has characters outside the alphabet.
     func logProbability(of word: String) -> Double {
         guard let path = Self.path(of: word, symbols: symbols) else { return -.infinity }
+        return logProbability(along: path)
+    }
+
+    /// The same for the beginning of a word: the end of word is not scored.
+    func logProbability(ofPrefix prefix: String) -> Double {
+        guard let path = Self.path(of: prefix, symbols: symbols) else { return -.infinity }
+        return logProbability(along: path.dropLast())
+    }
+
+    private func logProbability(along path: some Collection<Int>) -> Double {
+        let path = Array(path)
         var total = 0.0
         for index in 2..<path.count {
             total += log(probability(path[index - 2], path[index - 1], path[index]))

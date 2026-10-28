@@ -12,6 +12,11 @@ import LadCore
 //       --code, every conversion inside source files typed in the Latin layout (ideally none).
 //   lad-eval sweep [same options]
 //       The headline numbers for a grid of detector thresholds.
+//   lad-eval live [same options] [--unlisted FILE] [--live-length N --live-margin M]
+//       Live switching for a grid of thresholds (or the one given, with code's early switches
+//       listed): how many words typed in the wrong layout switch before their end and after how
+//       many keys, and every early switch of a word typed in the right layout, of the unlisted
+//       words in FILE (one per line, typed in their own layout) and of code.
 //   lad-eval pack [--resources DIR] --out DIR
 //       Packs each word list into DIR/<language>.lad, the form the app maps (make bundle).
 //   lad-eval explain [--resources DIR] [--fixture FILE] WORD...
@@ -28,6 +33,9 @@ struct Options {
     /// Test words from these word lists instead of the ones the models load, to compare lists.
     var testWords: URL?
     var out: URL?
+    var unlisted: URL?
+    var liveLength: Int?
+    var liveMargin: Double?
     var codeDirectories: [URL] = []
     var words: [String] = []
 
@@ -45,6 +53,9 @@ struct Options {
             case "--top": top = Int(value) ?? top
             case "--test-words": testWords = URL(fileURLWithPath: value)
             case "--out": out = URL(fileURLWithPath: value)
+            case "--unlisted": unlisted = URL(fileURLWithPath: value)
+            case "--live-length": liveLength = Int(value)
+            case "--live-margin": liveMargin = Double(value)
             case "--code": codeDirectories.append(URL(fileURLWithPath: (value as NSString).expandingTildeInPath))
             default: throw EvalError(description: "unknown option \(argument)")
             }
@@ -214,9 +225,10 @@ func evaluateWords(_ language: Language, corpus: Corpus, detector: Detector) -> 
 }
 
 /// Feeds source files to the engine as if typed in the Latin layout; every conversion is a false one.
-func evaluateCode(corpus: Corpus, detector: Detector) -> (words: Int, conversions: [String: Int]) {
+func evaluateCode(corpus: Corpus, detector: Detector, live: Bool = false) -> (words: Int, conversions: [String: Int]) {
     guard let pair = LayoutPair(current: corpus.latin, other: corpus.cyrillic) else { return (0, [:]) }
     var engine = LadEngine(layouts: pair, detector: detector)
+    engine.convertsWhileTyping = live
     var conversions: [String: Int] = [:]
     var words = 0
     for text in corpus.code {
@@ -250,6 +262,83 @@ func report(_ language: Language, _ result: WordResult) {
     }
     print("  most frequent misses: \(result.misses.joined(separator: " "))")
     print("  false conversions: \(result.falseConversions.isEmpty ? "none" : result.falseConversions.joined(separator: " "))")
+}
+
+/// Types the word and a space with live switching on, like the app would show them: a key the
+/// engine lets through types in the layout in use before it.
+func typeLive(_ strokes: [KeyStroke], layouts: LayoutPair, detector: Detector) -> (screen: String, earlyAt: Int?) {
+    var engine = LadEngine(layouts: layouts, detector: detector)
+    engine.convertsWhileTyping = true
+    var screen = ""
+    var earlyAt: Int?
+    for (index, stroke) in (strokes + [KeyStroke(keyCode: KeyCode.space)]).enumerated() {
+        let table = engine.layouts?.current ?? layouts.current
+        let output = engine.handle(.keyDown(keyCode: stroke.keyCode, modifiers: stroke.modifiers, isRepeat: false))
+        if let replacement = output.replacement {
+            screen.removeLast(min(replacement.deleteCount, screen.count))
+            screen += replacement.text
+            if index < strokes.count, earlyAt == nil { earlyAt = index + 1 }
+        }
+        if !output.suppressesEvent { screen += table.text(for: stroke) ?? "" }
+    }
+    return (screen, earlyAt)
+}
+
+func runLive(_ options: Options) throws {
+    let corpus = try Corpus(options)
+    let unlisted = try options.unlisted.map { url in
+        try String(contentsOf: url, encoding: .utf8).split(separator: "\n").map { String($0.split(separator: "\t")[0]) }
+    } ?? []
+    print("len margin | wrong layout switch early (uses/words, mean keys) and end right | false early: right words, unlisted, code")
+    let single = options.liveLength.flatMap { length in options.liveMargin.map { (length, $0) } }
+    let baseline = single.map { _ in evaluateCode(corpus: corpus, detector: Detector(models: corpus.models)).conversions } ?? [:]
+    for minimum in single.map({ [$0.0] }) ?? [3, 4] {
+        for margin in single.map({ [$0.1] }) ?? [4.0, 6, 8, 10, 12] {
+            var config = DetectorConfig.standard
+            config.liveMinimumLength = minimum
+            config.liveMargin = margin
+            let detector = Detector(models: corpus.models, config: config)
+            var line = String(format: "%2d %5.1f  |", minimum, margin)
+            var falseRight = 0
+            for language in [Language.ukrainian, .english] {
+                let home = corpus.home(language)
+                let away = corpus.away(language)
+                guard let right = LayoutPair(current: home, other: away), let wrong = LayoutPair(current: away, other: home) else { continue }
+                var early = Tally()
+                var correct = Tally()
+                var keys = 0
+                for (word, count) in corpus.words[language] ?? [] where word.count >= minimum {
+                    let strokes = word.compactMap { home.stroke(for: $0) }
+                    guard strokes.count == word.count else { continue }
+                    let typed = typeLive(strokes, layouts: wrong, detector: detector)
+                    early.add(weight: Double(count), hit: typed.earlyAt != nil)
+                    correct.add(weight: Double(count), hit: typed.screen == word + " ")
+                    keys += typed.earlyAt ?? 0
+                    if typeLive(strokes, layouts: right, detector: detector).earlyAt != nil { falseRight += 1 }
+                }
+                line += String(format: " %@ %5.1f%%/%5.1f%% %.1f keys, end %5.1f%% |", language.rawValue,
+                               early.hitWeight / max(early.weight, 1) * 100, Double(early.hits) / Double(max(early.count, 1)) * 100,
+                               Double(keys) / Double(max(early.hits, 1)), correct.hitWeight / max(correct.weight, 1) * 100)
+            }
+            var falseUnlisted: [String] = []
+            if let pair = LayoutPair(current: corpus.cyrillic, other: corpus.latin) {
+                for word in unlisted {
+                    let strokes = word.compactMap { corpus.cyrillic.stroke(for: $0) }
+                    guard strokes.count == word.count else { continue }
+                    if typeLive(strokes, layouts: pair, detector: detector).earlyAt != nil { falseUnlisted.append(word) }
+                }
+            }
+            let conversions = evaluateCode(corpus: corpus, detector: detector, live: true).conversions
+            line += " \(falseRight) \(falseUnlisted.count)/\(unlisted.count) \(conversions.values.reduce(0, +))"
+            if !falseUnlisted.isEmpty { line += "  e.g. " + falseUnlisted.prefix(8).joined(separator: " ") }
+            print(line)
+            if single != nil {
+                for (conversion, count) in conversions.sorted(by: { $0.value > $1.value }) where count > baseline[conversion, default: 0] {
+                    print("    \(count - baseline[conversion, default: 0])× \(conversion)")
+                }
+            }
+        }
+    }
 }
 
 func runPack(_ options: Options) throws {
@@ -346,6 +435,7 @@ do {
     case "sweep": try runSweep(try Options(arguments.dropFirst()))
     case "explain": try runExplain(try Options(arguments.dropFirst()))
     case "pack": try runPack(try Options(arguments.dropFirst()))
+    case "live": try runLive(try Options(arguments.dropFirst()))
     default:
         throw EvalError(description: "usage: lad-eval dump-layouts | quality | sweep | explain WORD... | pack --out DIR [--resources DIR] [--fixture FILE] [--top N] [--test-words DIR] [--code DIR]")
     }

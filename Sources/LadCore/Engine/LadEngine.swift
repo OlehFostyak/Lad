@@ -43,6 +43,9 @@ public struct LadEngine: Sendable {
     /// Off: double Shift still fixes words but teaches nothing (in terminals, where the word may be
     /// a password typed at a prompt).
     public var learnsWords = true
+    /// Live switching: a word converts while it is typed, as soon as its beginning can only be the
+    /// other language's, not at its end.
+    public var convertsWhileTyping = false
     /// Normalized typed words never to convert (the user turned them back).
     public var exceptions: Set<String> = []
     /// Normalized typed words always to convert (the user fixed them by hand).
@@ -57,6 +60,10 @@ public struct LadEngine: Sendable {
     /// The keys up to the next boundary are not followed: a run too long to be a word, or a word
     /// another program typed into.
     private var skipsWord = false
+    /// The current word converted while typed (live switching).
+    private var live: LiveConversion?
+    /// A live switch of the current word was turned back: the word stays as typed.
+    private var holdsWord = false
     private var shiftTaps = ShiftTapDetector()
 
     public init(layouts: LayoutPair? = nil, detector: Detector? = nil) {
@@ -98,6 +105,8 @@ public struct LadEngine: Sendable {
         lastConversion = nil
         lessonFromLayoutID = nil
         skipsWord = false
+        live = nil
+        holdsWord = false
         shiftTaps.interrupt()
     }
 
@@ -122,6 +131,12 @@ extension LadEngine {
         var layoutID: String
 
         var allStrokes: [KeyStroke] { strokes + trailing }
+    }
+
+    /// A word converted while it was typed, with the undecided words before it that converted along.
+    private struct LiveConversion: Sendable, Equatable {
+        let pending: [KeyStroke]
+        let fromLayoutID: String
     }
 
     /// The last conversion, which a double Shift right after it turns back.
@@ -169,6 +184,7 @@ extension LadEngine {
         var output = EngineOutput.pass
         if Self.isWordKey(typed, in: layouts.current) || Self.isWordKey(other, in: layouts.other) {
             append(stroke)
+            output = convertEarly(layouts: layouts) ?? .pass
         } else {
             output = endWord(with: stroke, layouts: layouts)
         }
@@ -190,6 +206,8 @@ extension LadEngine {
             word = []
             history = []
             lessonFromLayoutID = nil
+            live = nil
+            holdsWord = false
             return
         }
         word.append(stroke)
@@ -208,6 +226,25 @@ extension LadEngine {
         }
         let strokes = word
         word = []
+        if let live {
+            // Converted while typed: the word stays as it is, and a double Shift right after turns
+            // the whole conversion back, as after one at the space.
+            self.live = nil
+            let all = live.pending + strokes + [boundary]
+            if let original = layouts.other.text(for: all), let shown = layouts.current.text(for: all) {
+                lastConversion = Conversion(
+                    original: original, insertedCount: shown.count, fromLayoutID: live.fromLayoutID,
+                    exception: layouts.other.text(for: strokes).map(WordText.normalized), taught: nil
+                )
+            }
+            history = [TypedWord(strokes: strokes, trailing: [boundary], verdict: nil, layoutID: layouts.current.id)]
+            return .pass
+        }
+        if holdsWord {
+            let output = keepHeldWord(strokes, layouts: layouts)
+            remember(TypedWord(strokes: strokes, trailing: [boundary], verdict: .keep, layoutID: layouts.current.id))
+            return output
+        }
         // A word fixed mid-way is learned whole only when it ends at a space, not at a digit or symbol.
         let lesson = layouts.current.text(for: boundary) == " " ? takeLesson(for: strokes, layouts: layouts) : nil
         lessonFromLayoutID = nil
@@ -267,7 +304,10 @@ extension LadEngine {
     /// after it (the app may send the message right away), so nothing of the line is kept for an undo.
     private mutating func finishLine(with key: KeyStroke, layouts: LayoutPair) -> EngineOutput {
         defer { reset() }
-        guard !skipsWord else { return .pass }
+        guard !skipsWord, live == nil else { return .pass }
+        if holdsWord {
+            return keepHeldWord(word, layouts: layouts)
+        }
         guard !word.isEmpty else {
             return convertsOnReturn ? convertLastWord(endingLineWith: key, layouts: layouts) : .pass
         }
@@ -388,6 +428,8 @@ extension LadEngine {
             word.removeLast()
             if word.isEmpty {
                 lessonFromLayoutID = nil
+                live = nil
+                holdsWord = false
             }
             return
         }
@@ -475,6 +517,54 @@ extension LadEngine {
         return EngineOutput(suppressesEvent: true, replacement: replacement)
     }
 
+    /// Live switching: the word converts as soon as its beginning can only be the other language's.
+    /// The key is suppressed and typed with the rest in the other layout, the undecided words right
+    /// before it included, and the user types the rest of the word in the new layout.
+    private mutating func convertEarly(layouts: LayoutPair) -> EngineOutput? {
+        guard convertsWhileTyping, isAutomatic, live == nil, !holdsWord, !skipsWord, lessonFromLayoutID == nil,
+              let detector, let typedLanguage = layouts.current.language, let otherLanguage = layouts.other.language,
+              let typed = layouts.current.text(for: word), let other = layouts.other.text(for: word),
+              detector.convertsEarly(typed: typed, in: typedLanguage, other: other, in: otherLanguage, exceptions: exceptions)
+        else { return nil }
+        let pending = pendingStrokes(in: history[...], layouts: layouts)
+        guard let shown = layouts.current.text(for: pending + word.dropLast()),
+              let inserted = layouts.other.text(for: pending + word) else { return nil }
+        self.layouts = layouts.swapped
+        live = LiveConversion(pending: pending, fromLayoutID: layouts.current.id)
+        history = []
+        lastConversion = nil
+        return EngineOutput(suppressesEvent: true, replacement: Replacement(deleteCount: shown.count, text: inserted, layoutID: layouts.other.id))
+    }
+
+    /// Double Shift while a word converted early is still being typed: it goes back to the layout
+    /// it was typed in, with the words that converted along, and stays so to its end.
+    private mutating func undoEarly(_ live: LiveConversion, layouts: LayoutPair) -> EngineOutput {
+        self.live = nil
+        let all = live.pending + word
+        guard let shown = layouts.current.text(for: all), let typed = layouts.other.text(for: all) else {
+            reset()
+            return .pass
+        }
+        self.layouts = layouts.swapped
+        holdsWord = true
+        history = []
+        return EngineOutput(replacement: Replacement(deleteCount: shown.count, text: typed, layoutID: layouts.other.id), isUndo: true)
+    }
+
+    /// The end of a word whose live switch was turned back: it becomes an exception, so it neither
+    /// converts early nor at its end again.
+    private mutating func keepHeldWord(_ strokes: [KeyStroke], layouts: LayoutPair) -> EngineOutput {
+        holdsWord = false
+        guard let typed = layouts.current.text(for: strokes) else { return .pass }
+        let exception = WordText.normalized(typed)
+        exceptions.insert(exception)
+        var output = EngineOutput(learnedException: exception)
+        if learnedWords.remove(exception) != nil {
+            output.forgottenWord = exception
+        }
+        return output
+    }
+
     /// The strokes of the undecided words right before the current one that convert along with it
     /// (nearest first, stopping at the first that does not). Each must be joined to the next by a
     /// space (after at most a couple of punctuation keys: "ghbdsn? zr" is "привіт, як") or a hyphen.
@@ -499,6 +589,9 @@ extension LadEngine {
     /// last word (and learn it), else ask for the selection.
     private mutating func doubleShift() -> EngineOutput {
         guard let layouts else { return .pass }
+        if let live, !word.isEmpty {
+            return undoEarly(live, layouts: layouts)
+        }
         if let conversion = lastConversion {
             return undo(conversion, layouts: layouts)
         }
