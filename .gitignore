@@ -7,3 +7,5 @@ xcuserdata/
 tools/.cache/
 # Intermediate icon renders (make icon).
 Resources/AppIcon.iconset/
+# Releases (make release).
+dist/

@@ -11,6 +11,9 @@ app, Swift 6, built with the Command Line Tools only — never propose installin
 - `make install` — release build, sign, install to ~/Applications/Lad.app, launch. Signing uses Lad's
   own "Lad Local Code Signing" identity in a password-locked keychain (`make setup-signing`), so the
   Accessibility grant survives rebuilds; the owner types that password, never ask for it.
+- `make release` (universal build, signed like an install: the owner types the password; zip, DMG and
+  sums in dist/) and `make publish` (tools/publish.sh: tag, push, GitHub release, cask in
+  OlehFostyak/homebrew-tap). Lad never gets networking for updates: Homebrew and this script do it.
 - `make verify` (otool/nm checks of the built binary; the allow-list covers non-Swift symbols and
   Foundation's Swift API), `make symbols` (refresh `tools/allowed-symbols.txt`
   after using a new API; review the diff).

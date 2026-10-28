@@ -72,7 +72,24 @@ Lad бачить кожну клавішу, тому зроблений так, 
 
 ## Встановлення
 
-Потрібні лише Command Line Tools (Xcode не потрібен).
+Потрібен macOS 26 або новіший, на Apple Silicon чи Intel.
+
+**Через Homebrew** (найпростіше, і так само просто оновлювати):
+
+```sh
+brew install --cask olehfostyak/tap/lad
+```
+
+Оновлення: `brew upgrade --cask lad`. Видалення: `brew uninstall --cask lad`, а з `--zap` прибираються і налаштування та списки слів.
+
+**Без Homebrew:** завантаж `Lad-<версія>.dmg` зі сторінки [Releases](https://github.com/OlehFostyak/Lad/releases), відкрий його і перетягни Lad в Applications. Нову версію ставиш так само поверх старої.
+
+**Перший запуск.**
+- Lad не нотаризований Apple, тому macOS спершу його заблокує. Відкрий System Settings → Privacy & Security і натисни «Open Anyway» біля Lad. Це треба лише один раз.
+- Далі Lad попросить доступ Accessibility, без нього він не бачить клавіш. Увімкни Lad у списку, перезапуск не потрібен.
+- Оновлення, підписані тим самим ключем, доступ не скидають.
+
+**Зі сирців.** Потрібні лише Command Line Tools (Xcode не потрібен):
 
 ```sh
 cd ~/Work/Lad
@@ -94,6 +111,13 @@ make install         # збирає, підписує (просить парол
 
 Автозапуск Lad вмикає сам при першому запуску (System Settings → General → Login Items). Вимикається перемикачем «Запускати разом із macOS» у попапі.
 
+**Реліз** (для автора):
+1. Підніми `CFBundleShortVersionString` у `Resources/Info.plist` і напиши нотатки в `docs/releases/v<версія>.md`. Закоміть.
+2. `make release` збирає універсальний Lad (Apple Silicon + Intel), підписує його ключем Lad (просить пароль keychain) і кладе в `dist/` zip, DMG і `SHA256SUMS`.
+3. `make publish` ставить тег `v<версія>`, пушить, створює реліз на GitHub з zip і DMG і оновлює cask у тапі [`OlehFostyak/homebrew-tap`](https://github.com/OlehFostyak/homebrew-tap).
+
+Ключ підпису (`lad-signing.keychain-db` і його пароль) не губи. Доступ Accessibility у друзів прив'язаний саме до нього: з новим ключем кожному доведеться давати доступ заново.
+
 ## Розробка
 
 | Команда | Що робить |
@@ -103,7 +127,8 @@ make install         # збирає, підписує (просить парол
 | `make coverage` | покриття `LadCore` (зараз ~96%) |
 | `make eval EVAL_FLAGS='--code ~/Work/Babak/Sources'` | якість детектора: частка конверсій і хибних спрацювань на топ-20k слів і на коді |
 | `make verify` | перевірка бінарника: фреймворки, заборонені символи, allow-list символів |
-| `make symbols` | оновити `tools/allowed-symbols.txt` після нового API (переглянь диф) |
+| `make symbols` | оновити `tools/allowed-symbols.txt` після нового API (переглянь диф; `UNIVERSAL=1` для обох архітектур) |
+| `make release` / `make publish` | зібрати підписаний універсальний реліз у `dist/` / викласти його на GitHub і в Homebrew |
 | `swift run -c release lad-eval sweep` | перебір порогів детектора |
 | `swift run -c release lad-eval live --unlisted FILE --code DIR` | перебір порогів перемикання під час набору |
 | `swift run lad-eval explain ghbdsn here` | бали, на яких стоїть рішення по слову |

@@ -26,7 +26,8 @@ SYMBOL_ALLOWLIST := $(PKG)/tools/allowed-symbols.txt
 # The imports the allow-list covers: every non-Swift symbol, and Foundation's Swift API (file and
 # URL access such as Data(contentsOf:) or write(to:) lives there). The Swift runtime and standard
 # library are left out.
-IMPORTS_CHECKED := awk '!/^_\$$s/ || /^_\$$s10Foundation/'
+# A universal binary lists each slice's imports under a header line; only symbol lines count.
+IMPORTS_CHECKED := awk '/^_/ && (!/^_\$$s/ || /^_\$$s10Foundation/)'
 
 # Extra SwiftPM flags; `SWIFTPM_FLAGS=--build-system native` is the fallback if a CLT update breaks
 # the default swiftbuild engine.
@@ -66,6 +67,15 @@ COUNT_IDENTITIES = security find-identity -p codesigning "$(SIGN_KEYCHAIN)" 2>/d
    index($$0, "\"" id "\"") || (length(id) == 40 && id !~ /[^0-9A-Fa-f]/ && index(toupper($$0), toupper(id))) { n++ } \
    END { print n + 0 }'
 
+# Releases (make release, then make publish): UNIVERSAL=1 adds an Intel slice, cross-compiled with
+# the CLT, to the Apple Silicon build; the app is signed like an install and packed as a zip
+# (Homebrew) and a DMG (drag to Applications) in dist/.
+UNIVERSAL    ?=
+INTEL_TRIPLE := x86_64-apple-macosx26.0
+INTEL_SPM     = --package-path "$(PKG)" --scratch-path "$(SCRATCH)/intel" $(SWIFTPM_FLAGS) -c $(CONFIG) --triple $(INTEL_TRIPLE)
+VERSION       = $(shell plutil -extract CFBundleShortVersionString raw "$(RES)/Info.plist")
+DIST         := $(PKG)/dist
+
 # CFBundleVersion: the commit count once the repository has commits, otherwise a date stamp.
 GIT_COUNT    = $(shell [ -e "$(PKG)/.git" ] && git -C "$(PKG)" rev-list --count HEAD 2>/dev/null)
 BUILD_NUMBER ?= $(if $(GIT_COUNT),$(GIT_COUNT),$(shell date +%Y%m%d%H%M))
@@ -75,7 +85,7 @@ EVAL_FLAGS  ?=
 
 .DEFAULT_GOAL := build
 .PHONY: doctor build test check coverage eval fixtures dictionaries icon symbols setup-signing bundle-check bundle \
-        verify install run stop restart logs uninstall clean
+        verify install release publish run stop restart logs uninstall clean
 
 # Checks the machine: Swift, the Swift Testing plugins, the signing identity and ~/Applications.
 doctor:
@@ -147,10 +157,16 @@ dictionaries:
 # diff before committing it: every new symbol is a new capability (make verify enforces the list).
 symbols: build
 	@bin="$$($(SWIFT) build $(SPM) -c $(CONFIG) --show-bin-path)/$(NAME)"; \
+	if [ -n "$(UNIVERSAL)" ]; then \
+	  $(SWIFT) build $(INTEL_SPM) --product $(NAME) $(LINK_SDK_FLAGS) >/dev/null; \
+	  intel="$$($(SWIFT) build $(INTEL_SPM) --show-bin-path)/$(NAME)"; \
+	else \
+	  intel=""; \
+	fi; \
 	{ echo "# Non-Swift symbols and Swift Foundation API the Lad binary may import (make verify)."; \
 	  echo "# Regenerate with make symbols and review the diff: a new symbol is a new capability."; \
 	  echo "# xcrun swift-demangle < tools/allowed-symbols.txt reads the Foundation ones."; \
-	  nm -u "$$bin" | $(IMPORTS_CHECKED) | LC_ALL=C sort -u; } > "$(SYMBOL_ALLOWLIST)"; \
+	  nm -u "$$bin" $$intel | $(IMPORTS_CHECKED) | LC_ALL=C sort -u; } > "$(SYMBOL_ALLOWLIST)"; \
 	echo "wrote $(SYMBOL_ALLOWLIST) ($$(grep -vc '^#' "$(SYMBOL_ALLOWLIST)") symbols)"
 
 # Once: creates the signing keychain and identity. Interactive (asks for a new password).
@@ -198,7 +214,12 @@ bundle: bundle-check build
 	cp "$(RES)/Info.plist" "$$app/Contents/Info.plist"; \
 	plutil -replace CFBundleVersion -string "$(BUILD_NUMBER)" "$$app/Contents/Info.plist"; \
 	printf 'APPL????' > "$$app/Contents/PkgInfo"; \
-	cp "$$bin/$(NAME)" "$$app/Contents/MacOS/$(NAME)"; \
+	if [ -n "$(UNIVERSAL)" ]; then \
+	  $(SWIFT) build $(INTEL_SPM) --product $(NAME) $(LINK_SDK_FLAGS); \
+	  lipo -create "$$bin/$(NAME)" "$$($(SWIFT) build $(INTEL_SPM) --show-bin-path)/$(NAME)" -output "$$app/Contents/MacOS/$(NAME)"; \
+	else \
+	  cp "$$bin/$(NAME)" "$$app/Contents/MacOS/$(NAME)"; \
+	fi; \
 	cp "$(RES)/AppIcon.icns" "$$app/Contents/Resources/AppIcon.icns"; \
 	"$$bin/lad-eval" pack --resources "$(RES)" --out "$$app/Contents/Resources/Dictionaries"; \
 	cp "$(RES)/Licenses.txt" "$$app/Contents/Resources/Licenses.txt"; \
@@ -230,7 +251,7 @@ verify:
 	     else echo "error: expected a certificate-based designated requirement" >&2; exit 1; fi;; \
 	esac; \
 	binary="$$app/Contents/MacOS/$(NAME)"; \
-	for library in $$(otool -L "$$binary" | tail -n +2 | awk '{ print $$1 }'); do \
+	for library in $$(otool -L "$$binary" | awk '/^[[:space:]]/ { print $$1 }' | LC_ALL=C sort -u); do \
 	  case "$$library" in \
 	    *Network.framework*|*CFNetwork*|*WebKit*|*CloudKit*|*MultipeerConnectivity*) \
 	      echo "error: links $$library" >&2; exit 1;; \
@@ -270,6 +291,32 @@ install: bundle
 	rm -rf "$(INSTALLED).old"
 	"$(LSREGISTER)" -f "$(INSTALLED)"
 	@$(MAKE) --no-print-directory run
+
+# A release of the committed tree: the universal app signed with Lad's identity (the keychain
+# password, as for install; friends' Accessibility grants follow that certificate, so a release is
+# never signed ad hoc), packed in dist/ with SHA-256 sums.
+release:
+	@if [ '$(SIGN_ID)' = - ] && [ -z "$(ALLOW_ADHOC)" ]; then \
+	  echo "error: a release must be signed with $(IDENTITY), not ad hoc" >&2; exit 1; \
+	fi
+	@$(MAKE) --no-print-directory bundle UNIVERSAL=1
+	@set -e; \
+	version="$(VERSION)"; \
+	rm -rf "$(DIST)"; \
+	mkdir -p "$(DIST)"; \
+	ditto -c -k --keepParent "$(APPDIR)" "$(DIST)/$(NAME)-$$version.zip"; \
+	staging="$$(mktemp -d)"; \
+	ditto "$(APPDIR)" "$$staging/$(NAME).app"; \
+	ln -s /Applications "$$staging/Applications"; \
+	hdiutil create -quiet -volname "$(NAME) $$version" -srcfolder "$$staging" -ov -format UDZO "$(DIST)/$(NAME)-$$version.dmg"; \
+	rm -rf "$$staging"; \
+	cd "$(DIST)" && shasum -a 256 "$(NAME)-$$version.zip" "$(NAME)-$$version.dmg" > SHA256SUMS; \
+	echo "Release $$version in $(DIST):"; \
+	cat SHA256SUMS
+
+# Publishes dist/ as GitHub release v$(VERSION) and points the Homebrew cask at it (tools/publish.sh).
+publish:
+	@/bin/bash "$(PKG)/tools/publish.sh" "$(VERSION)" "$(DIST)"
 
 # Through LaunchServices, never the raw executable.
 run:
