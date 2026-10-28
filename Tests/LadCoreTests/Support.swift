@@ -96,6 +96,7 @@ struct Typist {
         press(KeyCode.returnKey, modifiers)
     }
 
+    @discardableResult
     mutating func doubleShift() -> EngineOutput {
         clock += 10
         _ = engine.handle(.modifiersChanged(.shift, time: clock))

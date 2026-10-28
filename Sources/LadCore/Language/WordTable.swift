@@ -23,7 +23,9 @@ struct WordTable: Sendable {
             counts.reserveCapacity(words)
         }
 
+        /// An empty word or a zero count is left out: the block would not read back.
         mutating func add(_ word: String, count: UInt32) {
+            guard !word.isEmpty, count > 0 else { return }
             bytes += word.utf8
             ends.append(bytes.count)
             counts.append(count)

@@ -212,6 +212,9 @@ final class TypingController {
             }
             return true
         }
+        if case .keyDown = event {
+            engine.isTypedFast = rhythm.lastGapWasQuick
+        }
         let layoutBefore = engine.layouts?.current.id
         let result = engine.handle(event)
         remember(result)

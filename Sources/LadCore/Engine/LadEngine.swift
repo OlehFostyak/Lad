@@ -46,6 +46,9 @@ public struct LadEngine: Sendable {
     /// Live switching: a word converts while it is typed, as soon as its beginning can only be the
     /// other language's, not at its end.
     public var convertsWhileTyping = false
+    /// The last key came faster than a hand types: a program may be typing (it is caught only from
+    /// its fifth fast press), so no word switches early on this key.
+    public var isTypedFast = false
     /// Normalized typed words never to convert (the user turned them back).
     public var exceptions: Set<String> = []
     /// Normalized typed words always to convert (the user fixed them by hand).
@@ -64,6 +67,9 @@ public struct LadEngine: Sendable {
     private var live: LiveConversion?
     /// A live switch of the current word was turned back: the word stays as typed.
     private var holdsWord = false
+    /// Words finished on the line since Return (or since Lad lost track): a short reply converts
+    /// at Return only as the line's one word.
+    private var wordsOnLine = 0
     private var shiftTaps = ShiftTapDetector()
 
     public init(layouts: LayoutPair? = nil, detector: Detector? = nil) {
@@ -107,6 +113,7 @@ public struct LadEngine: Sendable {
         skipsWord = false
         live = nil
         holdsWord = false
+        wordsOnLine = 0
         shiftTaps.interrupt()
     }
 
@@ -129,6 +136,8 @@ extension LadEngine {
         var verdict: Verdict?
         /// The layout whose characters for the strokes are on screen.
         var layoutID: String
+        /// The keys as typed, when the conversion on screen added one (an apostrophe).
+        var typedStrokes: [KeyStroke]?
 
         var allStrokes: [KeyStroke] { strokes + trailing }
     }
@@ -152,6 +161,13 @@ extension LadEngine {
         /// The keys as typed, when the fix changed them (a case fix, an added apostrophe): an undo
         /// puts them back.
         var typedStrokes: [KeyStroke]?
+        /// The word being typed was converted, not the last finished one.
+        var ofCurrentWord = false
+        /// The word was held (its live switch turned back) before this fix by hand; an undo holds it again.
+        var restoresHold = false
+        /// False when the exception is kept in memory only: only the beginning of a word that
+        /// switched early was judged, so it is stored only if it is a word in its layout.
+        var persistsException = true
     }
 
     private mutating func handleKey(_ keyCode: UInt16, modifiers: Modifiers, isRepeat: Bool) -> EngineOutput {
@@ -217,30 +233,36 @@ extension LadEngine {
         if skipsWord {
             skipsWord = false
             history = []
+            wordsOnLine += 1
             return .pass
         }
         guard !word.isEmpty else {
             lessonFromLayoutID = nil
-            extendTrailing(with: boundary)
+            extendTrailing(with: boundary, layouts: layouts)
             return .pass
         }
         let strokes = word
         word = []
+        wordsOnLine += 1
         if let live {
             // Converted while typed: the word stays as it is, and a double Shift right after turns
             // the whole conversion back, as after one at the space.
             self.live = nil
+            lessonFromLayoutID = nil
             let all = live.pending + strokes + [boundary]
-            if let original = layouts.other.text(for: all), let shown = layouts.current.text(for: all) {
+            if let original = layouts.other.text(for: all), let shown = layouts.current.text(for: all),
+               let typed = layouts.other.text(for: strokes) {
                 lastConversion = Conversion(
                     original: original, insertedCount: shown.count, fromLayoutID: live.fromLayoutID,
-                    exception: layouts.other.text(for: strokes).map(WordText.normalized), taught: nil
+                    exception: WordText.normalized(typed), taught: nil,
+                    persistsException: isWord(typed, in: layouts.other)
                 )
             }
             history = [TypedWord(strokes: strokes, trailing: [boundary], verdict: nil, layoutID: layouts.current.id)]
             return .pass
         }
         if holdsWord {
+            lessonFromLayoutID = nil
             let output = keepHeldWord(strokes, layouts: layouts)
             remember(TypedWord(strokes: strokes, trailing: [boundary], verdict: .keep, layoutID: layouts.current.id))
             return output
@@ -265,6 +287,12 @@ extension LadEngine {
         }
         output.learnedWord = lesson
         return output
+    }
+
+    /// Whether the typed text is a word, listed or word-like, in the table's language.
+    private func isWord(_ text: String, in table: LayoutTable) -> Bool {
+        guard let detector, let language = table.language else { return false }
+        return detector.isListed(text, in: language) || detector.looksLikeWord(text, in: language)
     }
 
     /// "ПРивіт" → "Привіт" in the same layout, when the fixed word is listed. The boundary key (if
@@ -314,7 +342,7 @@ extension LadEngine {
         let lesson = takeLesson(for: word, layouts: layouts)
         let pending = pendingStrokes(in: history[...], layouts: layouts)
         var (verdict, converted) = conversion(for: word, layouts: layouts)
-        if verdict == .undecided, history.isEmpty, isShortReply(word, layouts: layouts) {
+        if verdict == .undecided, wordsOnLine == 0, isShortReply(word, layouts: layouts) {
             (verdict, converted) = (.convert, word)
         }
         guard convertsOnReturn, verdict == .convert, let original = layouts.current.text(for: pending + word),
@@ -337,7 +365,7 @@ extension LadEngine {
               let punctuation = layouts.other.text(for: last.trailing),
               punctuation.allSatisfy(Self.closingPunctuation.contains) else { return .pass }
         var (verdict, converted) = conversion(for: last.strokes, layouts: layouts)
-        if verdict == .undecided, history.count == 1, isShortReply(last.strokes, layouts: layouts) {
+        if verdict == .undecided, wordsOnLine == 1, isShortReply(last.strokes, layouts: layouts) {
             (verdict, converted) = (.convert, last.strokes)
         }
         let pending = pendingStrokes(in: history.dropLast(), layouts: layouts)
@@ -354,10 +382,13 @@ extension LadEngine {
     /// apostrophe Ukrainian needs and the typist skipped (vzx is «мяч», no word; it converts as «м'яч»).
     private func conversion(for strokes: [KeyStroke], layouts: LayoutPair) -> (verdict: Verdict, converted: [KeyStroke]) {
         let verdict = verdict(for: strokes, layouts: layouts)
-        // Two keys are too often code ("d." is «вю», which «в'ю» would let through).
-        guard verdict != .convert, strokes.count >= Self.minApostropheLength, layouts.other.language == .ukrainian,
+        // Two keys are too often code ("d." is «вю», which «в'ю» would let through). A spelling that
+        // converts and is listed needs nothing; one that converts unlisted (зявився) gives way to a
+        // listed spelling with the apostrophe (з'явився).
+        guard strokes.count >= Self.minApostropheLength, layouts.other.language == .ukrainian, let detector,
               let apostrophe = layouts.other.stroke(for: WordText.apostrophe) ?? layouts.other.stroke(for: "ʼ"),
-              let other = layouts.other.text(for: strokes) else { return (verdict, strokes) }
+              let other = layouts.other.text(for: strokes),
+              verdict != .convert || !detector.isListed(other, in: .ukrainian) else { return (verdict, strokes) }
         let letters = Array(other.lowercased())
         guard letters.count == strokes.count else { return (verdict, strokes) }
         for index in letters.indices.dropFirst() where Self.iotatedVowels.contains(letters[index]) {
@@ -365,7 +396,10 @@ extension LadEngine {
             guard Language.ukrainian.isLetter(before), !Self.ukrainianVowels.contains(before), before != "ь" else { continue }
             var converted = strokes
             converted.insert(apostrophe, at: index)
-            if self.verdict(for: strokes, layouts: layouts, into: converted) == .convert {
+            let converts = verdict == .convert
+                ? layouts.other.text(for: converted).map { detector.isListed($0, in: .ukrainian) } ?? false
+                : self.verdict(for: strokes, layouts: layouts, into: converted) == .convert
+            if converts {
                 return (.convert, converted)
             }
         }
@@ -409,8 +443,10 @@ extension LadEngine {
         }
     }
 
-    private mutating func extendTrailing(with boundary: KeyStroke) {
-        guard var last = history.popLast(), last.trailing.count < Self.maxTrailing else {
+    /// A boundary key after the last word's boundary (", " or ". "). Typed in another layout than
+    /// the word (after a fix by hand mid-word), it is not that word's: Lad lets the words go.
+    private mutating func extendTrailing(with boundary: KeyStroke, layouts: LayoutPair) {
+        guard var last = history.popLast(), last.trailing.count < Self.maxTrailing, last.layoutID == layouts.current.id else {
             history = []
             return
         }
@@ -510,7 +546,10 @@ extension LadEngine {
             exception: layouts.current.text(for: strokes).map(WordText.normalized), taught: nil,
             typedStrokes: converted == strokes ? nil : strokes
         )
-        history = [TypedWord(strokes: converted, trailing: [boundary], verdict: nil, layoutID: layouts.other.id)]
+        history = [TypedWord(
+            strokes: converted, trailing: [boundary], verdict: nil, layoutID: layouts.other.id,
+            typedStrokes: converted == strokes ? nil : strokes
+        )]
         let replacement = Replacement(
             deleteCount: original.count - typedBoundary.count, text: inserted, layoutID: layouts.other.id
         )
@@ -521,7 +560,7 @@ extension LadEngine {
     /// The key is suppressed and typed with the rest in the other layout, the undecided words right
     /// before it included, and the user types the rest of the word in the new layout.
     private mutating func convertEarly(layouts: LayoutPair) -> EngineOutput? {
-        guard convertsWhileTyping, isAutomatic, live == nil, !holdsWord, !skipsWord, lessonFromLayoutID == nil,
+        guard convertsWhileTyping, isAutomatic, !isTypedFast, live == nil, !holdsWord, !skipsWord, lessonFromLayoutID == nil,
               let detector, let typedLanguage = layouts.current.language, let otherLanguage = layouts.other.language,
               let typed = layouts.current.text(for: word), let other = layouts.other.text(for: word),
               detector.convertsEarly(typed: typed, in: typedLanguage, other: other, in: otherLanguage, exceptions: exceptions)
@@ -557,12 +596,10 @@ extension LadEngine {
     /// visible field) stays an exception in memory, until Lad quits.
     private mutating func keepHeldWord(_ strokes: [KeyStroke], layouts: LayoutPair) -> EngineOutput {
         holdsWord = false
-        guard let typed = layouts.current.text(for: strokes), let language = layouts.current.language else { return .pass }
+        guard let typed = layouts.current.text(for: strokes) else { return .pass }
         let exception = WordText.normalized(typed)
         exceptions.insert(exception)
-        guard let detector, detector.isListed(typed, in: language) || detector.looksLikeWord(typed, in: language) else {
-            return .pass
-        }
+        guard isWord(typed, in: layouts.current) else { return .pass }
         var output = EngineOutput(learnedException: exception)
         if learnedWords.remove(exception) != nil {
             output.forgottenWord = exception
@@ -601,9 +638,14 @@ extension LadEngine {
             return undo(conversion, layouts: layouts)
         }
         if !word.isEmpty {
+            // A held word fixed by hand after all: the fix stands, and is learned at the word's end.
+            let wasHeld = holdsWord
             let output = convertByHand(word, layouts: layouts, taught: nil)
             if output.replacement != nil {
+                holdsWord = false
                 lessonFromLayoutID = layouts.current.id
+                lastConversion?.ofCurrentWord = true
+                lastConversion?.restoresHold = wasHeld
             }
             return output
         }
@@ -614,15 +656,23 @@ extension LadEngine {
                let converted = layouts.other.text(for: last.strokes) {
                 taught = lesson(typed: typed, in: layouts.current, converted: converted, in: layouts.other)
             }
-            let output = convertByHand(last.allStrokes, layouts: layouts, taught: taught)
-            history = [TypedWord(strokes: last.strokes, trailing: last.trailing, verdict: nil, layoutID: layouts.other.id)]
+            // A word converted with an added apostrophe goes back to the keys as typed.
+            let typedStrokes = last.typedStrokes ?? last.strokes
+            let output = convertByHand(last.allStrokes, into: typedStrokes + last.trailing, layouts: layouts, taught: taught)
+            if last.typedStrokes != nil {
+                lastConversion?.typedStrokes = last.strokes
+            }
+            history = [TypedWord(strokes: typedStrokes, trailing: last.trailing, verdict: nil, layoutID: layouts.other.id)]
             return output
         }
         return EngineOutput(convertsSelection: true)
     }
 
-    private mutating func convertByHand(_ strokes: [KeyStroke], layouts: LayoutPair, taught: String?) -> EngineOutput {
-        guard let typed = layouts.current.text(for: strokes), let other = layouts.other.text(for: strokes) else {
+    /// `converted`: the keys to retype in the other layout, when they differ from those on screen.
+    private mutating func convertByHand(
+        _ strokes: [KeyStroke], into converted: [KeyStroke]? = nil, layouts: LayoutPair, taught: String?
+    ) -> EngineOutput {
+        guard let typed = layouts.current.text(for: strokes), let other = layouts.other.text(for: converted ?? strokes) else {
             return .pass
         }
         self.layouts = layouts.swapped
@@ -644,7 +694,8 @@ extension LadEngine {
         if switchesBack {
             self.layouts = layouts.swapped
         }
-        if var last = history.popLast() {
+        holdsWord = conversion.restoresHold
+        if !conversion.ofCurrentWord, var last = history.popLast() {
             if switchesBack, last.layoutID == layouts.current.id {
                 last.layoutID = layouts.other.id
             }
@@ -659,7 +710,9 @@ extension LadEngine {
         if let exception = conversion.exception {
             // An automatic conversion turned back: never again, even if it was learned.
             exceptions.insert(exception)
-            output.learnedException = exception
+            if conversion.persistsException {
+                output.learnedException = exception
+            }
             if learnedWords.remove(exception) != nil {
                 output.forgottenWord = exception
             }

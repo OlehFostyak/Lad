@@ -25,6 +25,9 @@ public struct TypingRhythm: Sendable, Equatable {
 
     public init() {}
 
+    /// Whether the last press came faster than a hand types, though not yet for long.
+    public var lastGapWasQuick: Bool { quickGaps > 0 }
+
     /// Feeds one key press, at the time the keyboard reported it (not when Lad got to it: presses
     /// queue up while the main thread is busy); true while the presses come at a program's pace.
     public mutating func isMachine(at time: TimeInterval) -> Bool {

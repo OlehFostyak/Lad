@@ -415,6 +415,21 @@ struct ApostropheTests {
         #expect(mash.type("qzx ", on: us).isEmpty)
     }
 
+    @Test("A spelling that converts without its apostrophe still gets it, when that is the listed one")
+    func prefersListedApostrophe() throws {
+        var typist = Typist(Fixture.typingInUS)
+        let output = try #require(typist.type(Fixture.retype("зявився", from: ua, to: us) + " ", on: us).last)
+        #expect(output.replacement?.text == "з'явився ")
+    }
+
+    @Test("Converting the word back by hand later types the keys as typed, without the apostrophe")
+    func dropsApostropheOnTheWayBack() throws {
+        var typist = Typist(Fixture.typingInUS)
+        typist.type("vzx ", on: us)
+        typist.type("1", on: ua)
+        #expect(typist.doubleShift().replacement == Replacement(deleteCount: 6, text: "vzx 1", layoutID: us.id))
+    }
+
     @Test("At Return too, with the line's punctuation")
     func addsApostropheAtReturn() throws {
         var typist = Typist(Fixture.typingInUS)
@@ -447,6 +462,13 @@ struct ShortReplyTests {
         var english = Typist(Fixture.typingInUA)
         english.type("щл", on: ua)
         #expect(english.pressReturn().replacement?.text == "ok")
+    }
+
+    @Test("Not after words whose history overflowed")
+    func staysAfterOverflow() {
+        var typist = Typist(Fixture.typingInUS)
+        typist.type("wow!!! jr", on: us)
+        #expect(typist.pressReturn().replacement == nil)
     }
 
     @Test("Not after other words, not at a space, and never a code token")
@@ -557,8 +579,41 @@ struct LiveSwitchingTests {
         typist.type("ghbdsn ", on: us)
         let undo = typist.doubleShift()
         #expect(undo.replacement == Replacement(deleteCount: 7, text: "ghbdsn ", layoutID: us.id))
-        #expect(undo.learnedException == "ghbdsn")
+        // Only «ghbd» was judged and «ghbdsn» is no English word: an exception in memory only.
+        #expect(undo.learnedException == nil)
+        #expect(typist.engine.exceptions.contains("ghbdsn"))
         #expect(typist.type("ghbdsn ", on: us).isEmpty)
+    }
+
+    @Test("A held word fixed by hand after all is learned at its end, and teaches the next word nothing")
+    func fixesHeldWordByHand() {
+        var typist = typist(Fixture.typingInUS)
+        typist.type("ghbd", on: us)
+        #expect(typist.doubleShift().isUndo)
+        #expect(typist.doubleShift().replacement == Replacement(deleteCount: 4, text: "прив", layoutID: ua.id))
+        let end = typist.type("іт ", on: ua)
+        #expect(end.allSatisfy { $0.learnedException == nil })
+        #expect(end.last?.learnedWord == "ghbdsn")
+        #expect(typist.type("як ", on: ua).allSatisfy { $0.learnedWord == nil })
+    }
+
+    @Test("Undoing that fix by hand holds the word again")
+    func holdsAgainAfterUndo() {
+        var typist = typist(Fixture.typingInUS)
+        typist.type("ghbd", on: us)
+        typist.doubleShift()
+        typist.doubleShift()
+        #expect(typist.doubleShift().replacement == Replacement(deleteCount: 4, text: "ghbd", layoutID: us.id))
+        #expect(typist.type("sn ", on: us).allSatisfy { $0.replacement == nil })
+    }
+
+    @Test("Keys that come faster than a hand types never switch early")
+    func waitsOnFastKeys() throws {
+        var typist = typist(Fixture.typingInUS)
+        typist.engine.isTypedFast = true
+        let outputs = typist.type("ghbdsn ", on: us)
+        #expect(outputs.count == 1)
+        #expect(outputs.first?.replacement == Replacement(deleteCount: 6, text: "привіт ", layoutID: ua.id))
     }
 
     @Test("Double Shift mid-word turns the switch back; the word stays and becomes an exception")
@@ -590,5 +645,27 @@ struct LiveSwitchingTests {
         var typist = typist(Fixture.typingInUS)
         let output = try #require(typist.type("z ghbdsn", on: us).first)
         #expect(output.replacement == Replacement(deleteCount: 5, text: "я прив", layoutID: ua.id))
+    }
+}
+
+
+@Suite("Undo of a fix by hand mid-word")
+struct MidWordUndoTests {
+    private let us = Fixture.us
+    private let ua = Fixture.ua
+
+    @Test("Turning back a fix of the word being typed leaves the words before it alone")
+    func leavesHistoryAlone() {
+        var typist = Typist(Fixture.typingInUS, detector: Fixture.cautiousDetector)
+        typist.type("hello ", on: us)
+        typist.type("ghb", on: us)
+        typist.doubleShift()
+        for _ in 0..<3 { typist.press(KeyCode.delete) }
+        typist.type("руд", on: ua)
+        typist.doubleShift()
+        #expect(typist.doubleShift().isUndo)
+        for _ in 0..<4 { typist.press(KeyCode.delete) }
+        // «hello» was typed in U.S. while Ukrainian is current: Lad has lost the word, not mislabeled it.
+        #expect(typist.doubleShift().replacement == nil)
     }
 }

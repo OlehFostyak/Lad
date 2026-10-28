@@ -42,14 +42,6 @@ public struct LanguageModel: Sendable {
         self.init(language: language, words: words)
     }
 
-    public init(language: Language, counts: [String: UInt32]) {
-        var builder = WordTable.Builder()
-        for (word, count) in counts {
-            builder.add(word, count: count)
-        }
-        self.init(language: language, words: builder.build())
-    }
-
     /// Reads a model written by `packed()`, usually mapped from a file: nothing is parsed or
     /// trained, and the word table is used where it lies.
     public init(language: Language, packed: Data) throws(LoadError) {
