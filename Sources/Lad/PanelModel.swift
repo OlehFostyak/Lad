@@ -108,6 +108,11 @@ final class PanelModel: ObservableObject {
         refresh()
     }
 
+    /// The same keys in the other layout: what a stored word turns into (or would, for an exception).
+    func twin(of word: String) -> String? {
+        controller.layouts.flatMap { TextConverter.convert(word, layouts: $0)?.text }
+    }
+
     func removeLearnedWord(_ word: String) {
         controller.removeLearnedWord(word)
         refresh()

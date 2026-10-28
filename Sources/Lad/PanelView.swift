@@ -124,12 +124,12 @@ struct PanelView: View {
     private var lists: some View {
         VStack(alignment: .leading, spacing: 6) {
             WordList(
-                title: "Завжди виправляти", words: model.learnedWords,
+                title: "Завжди виправляти", words: model.learnedWords, twin: model.twin, isReplaced: true,
                 note: "Слова, які ти виправив подвійним Shift, Lad далі виправляє сам.",
                 remove: model.removeLearnedWord, clear: model.clearLearnedWords
             )
             WordList(
-                title: "Винятки", words: model.exceptions,
+                title: "Винятки", words: model.exceptions, twin: model.twin, isReplaced: false,
                 note: "Слова, які ти скасував подвійним Shift, Lad більше не виправляє.",
                 remove: model.removeException, clear: model.clearExceptions
             )
@@ -230,10 +230,15 @@ private struct HotkeyRow: View {
     }
 }
 
-/// A collapsible list of words with a remove button each and a "forget all" link.
+/// A collapsible list of words with a remove button each and a "forget all" link. Each word shows
+/// its twin in the other layout, and what does not stay on screen is struck through: the typed word
+/// of a learned fix (руддщ → hello), the twin of an exception (ghbdsn → привіт).
 private struct WordList: View {
     let title: String
     let words: [String]
+    let twin: (String) -> String?
+    /// Learned words are replaced by their twin; exceptions stay as typed.
+    let isReplaced: Bool
     let note: String
     let remove: (String) -> Void
     let clear: () -> Void
@@ -246,7 +251,7 @@ private struct WordList: View {
                 ScrollView {
                     VStack(spacing: 4) {
                         ForEach(words, id: \.self) { word in
-                            RemovableRow(title: word) { remove(word) }
+                            WordPairRow(typed: word, twin: twin(word), isReplaced: isReplaced) { remove(word) }
                         }
                     }
                 }
@@ -259,16 +264,25 @@ private struct WordList: View {
     }
 }
 
-private struct RemovableRow: View {
-    let title: String
+private struct WordPairRow: View {
+    let typed: String
+    let twin: String?
+    let isReplaced: Bool
     let remove: () -> Void
 
     var body: some View {
-        HStack {
-            Text(title)
-                .font(.system(.body, design: .monospaced))
-                .lineLimit(1)
-                .truncationMode(.middle)
+        HStack(spacing: 6) {
+            Text(typed)
+                .strikethrough(isReplaced)
+                .foregroundStyle(isReplaced ? HierarchicalShapeStyle.secondary : .primary)
+            if let twin {
+                Image(systemName: "arrow.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                Text(twin)
+                    .strikethrough(!isReplaced)
+                    .foregroundStyle(isReplaced ? HierarchicalShapeStyle.primary : .secondary)
+            }
             Spacer()
             Button(action: remove) {
                 Image(systemName: "xmark.circle.fill")
@@ -277,6 +291,9 @@ private struct RemovableRow: View {
             .foregroundStyle(.secondary)
             .help("Прибрати")
         }
+        .font(.system(.body, design: .monospaced))
+        .lineLimit(1)
+        .truncationMode(.middle)
     }
 }
 
