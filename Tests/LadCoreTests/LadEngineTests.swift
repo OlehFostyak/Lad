@@ -278,13 +278,13 @@ struct LadEngineTests {
     @Test("A short word Lad leaves alone is learned from a fix by hand")
     func learnsShortWord() throws {
         var typist = Typist(Fixture.typingInUA)
-        #expect(typist.type("рш ", on: ua).isEmpty)
-        #expect(typist.doubleShift().replacement?.text == "hi ")
-        #expect(typist.type("x", on: us).first?.learnedWord == "рш")
+        #expect(typist.type("рф ", on: ua).isEmpty)
+        #expect(typist.doubleShift().replacement?.text == "ha ")
+        #expect(typist.type("x", on: us).first?.learnedWord == "рф")
         typist.engine.reset()
         typist.engine.currentLayoutDidChange(to: ua.id)
-        let output = try #require(typist.type("рш ", on: ua).last)
-        #expect(output.replacement == Replacement(deleteCount: 2, text: "hi ", layoutID: us.id))
+        let output = try #require(typist.type("рф ", on: ua).last)
+        #expect(output.replacement == Replacement(deleteCount: 2, text: "ha ", layoutID: us.id))
     }
 
     @Test("A fix by hand turned back at once teaches nothing")

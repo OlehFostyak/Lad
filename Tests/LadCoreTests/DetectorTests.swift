@@ -16,6 +16,8 @@ struct DetectorTests {
     @Test("Ukrainian words typed in the U.S. layout convert", arguments: [
         ("ghbdsn", "привіт"), ("[jxe", "хочу"), ("lzre.", "дякую"), ("cmjujlys", "сьогодні"),
         ("v`znf", "м'ята"), ("erhf]yf", "україна"), ("yt", "не"), ("oj", "що"),
+        // Words films rarely say, which the Wikipedia counts add.
+        ("rsds", "ківі"), ("cvfhnajy", "смартфон"), ("yjen,er", "ноутбук"),
     ])
     func convertsUkrainian(typed: String, meant: String) {
         #expect(Fixture.retype(typed, from: Fixture.us, to: Fixture.ua) == meant)

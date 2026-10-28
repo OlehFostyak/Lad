@@ -12,6 +12,13 @@ FrequencyWords
   License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0),
   https://creativecommons.org/licenses/by-sa/4.0/
 
+Ukrainian Wikipedia word counts
+  wikipedia-word-frequency by Ilya Semenov, https://github.com/IlyaSemenov/wikipedia-word-frequency
+  (commit b49c2ea, ukwiki-2022-08-30.txt; its code is MIT-licensed). Counted from the text of
+  Ukrainian Wikipedia, https://uk.wikipedia.org, written by its contributors.
+  License of the text: Creative Commons Attribution-ShareAlike (CC BY-SA 3.0 and 4.0),
+  https://creativecommons.org/licenses/by-sa/4.0/
+
 VESUM, Large Electronic Dictionary of Ukrainian (dict_uk)
   Copyright (c) 2026 Andriy Rysin (arysin@gmail.com), Vasyl Starko, BrUK team.
   https://vesum.nlp.net.ua/, https://github.com/brown-uk/dict_uk (release v6.8.6, dict_corp_vis.txt).
@@ -25,7 +32,9 @@ en.tsv, from FrequencyWords en_50k: lowercased; only words of the letters a-z, w
 and three-letter tokens limited to real words and common abbreviations; 64 contractions added
 with the count of a common word. Shared under CC BY-SA 4.0.
 
-uk.tsv, from FrequencyWords uk_full and VESUM: lowercased, apostrophes unified; only subtitle
-words seen at least twice that VESUM lists as normative word forms; VESUM's word forms with an
-apostrophe added with a count of 2. It holds material from both sources and is shared on the
-terms of both licenses, non-commercially.
+uk.tsv, from FrequencyWords uk_full, the Wikipedia counts and VESUM: lowercased, apostrophes
+unified, counts per billion subtitle words. It keeps the subtitle words seen at least twice
+that VESUM lists as normative word forms; adds, at half their Wikipedia frequency, the
+normative forms Wikipedia uses at least 50 times (four letters or more, or with an apostrophe,
+no proper names); and adds VESUM's other forms with an apostrophe with a count of 1. It holds
+material from all three sources and is shared on the terms of their licenses, non-commercially.

@@ -124,6 +124,7 @@ make install         # збирає, підписує (просить парол
 ## Дані й ліцензії
 
 - Частоти слів: [FrequencyWords](https://github.com/hermitdave/FrequencyWords) Hermit Dave (OpenSubtitles 2018), CC BY-SA 4.0.
+- Слова, яких мало в субтитрах (ківі, смартфон): частоти української Вікіпедії з [wikipedia-word-frequency](https://github.com/IlyaSemenov/wikipedia-word-frequency) (дамп 2022-08-30; текст Вікіпедії під CC BY-SA). Вікіпедія тільки додає слова, частоти слів із субтитрів лишаються свої.
 - Український список відфільтрований через [VESUM / dict_uk](https://github.com/brown-uk/dict_uk) v6.8.6. Дані словника під CC BY-NC-SA 4.0 (GPL-3.0 у них тільки код). Під час збірки звідти викидаються російські слова з субтитрів і додаються форми з апострофом.
 - Авторство, ліцензії і що Lad змінив у списках лежать в апці (`Contents/Resources/Licenses.txt`, кнопка «Ліцензії» в попапі), тож їдуть разом з нею.
 
