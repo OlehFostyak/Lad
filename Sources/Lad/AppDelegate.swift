@@ -61,13 +61,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func loadDictionaries(into controller: TypingController) {
-        guard let directory = DictionaryLoader.directory() else {
+        guard let source = DictionaryLoader.source() else {
             controller.dictionariesFailed()
             return
         }
         Task {
             do {
-                controller.install(models: try await DictionaryLoader.load(from: directory))
+                controller.install(models: try await DictionaryLoader.load(from: source))
             } catch {
                 Log.record(.wordListsFailed)
                 controller.dictionariesFailed()

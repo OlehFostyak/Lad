@@ -163,3 +163,33 @@ struct WordTableTests {
         }
     }
 }
+
+@Suite("Packed models")
+struct PackedModelTests {
+    @Test("A packed model reads back the same, without parsing or training")
+    func roundTrips() throws {
+        for model in Fixture.models {
+            let packed = model.packed()
+            let read = try LanguageModel(language: model.language, packed: packed)
+            #expect(read.wordCount == model.wordCount)
+            let samples = model.language == .english ? ["you", "keyboard", "don't", "zzzq"] : ["привіт", "м'яч", "щшгзкх", "і"]
+            for word in samples {
+                #expect(read.logFrequency(of: word) == model.logFrequency(of: word))
+                #expect(read.spellingLogProbability(of: word) == model.spellingLogProbability(of: word))
+            }
+        }
+    }
+
+    @Test("Truncated, foreign or empty blocks are rejected")
+    func rejectsMalformedPacks() throws {
+        let english = try #require(Fixture.models.first { $0.language == .english })
+        let packed = english.packed()
+        for block in [packed.prefix(packed.count - 8), packed.prefix(100), Data(), Data(count: 64)] {
+            #expect(throws: LanguageModel.LoadError.malformedPack) { try LanguageModel(language: .english, packed: block) }
+        }
+        #expect(throws: LanguageModel.LoadError.malformedPack) { try LanguageModel(language: .ukrainian, packed: packed) }
+        var broken = packed
+        broken[16] = 0xFF
+        #expect(throws: LanguageModel.LoadError.malformedPack) { try LanguageModel(language: .english, packed: broken) }
+    }
+}

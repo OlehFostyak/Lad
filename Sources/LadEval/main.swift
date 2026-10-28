@@ -12,6 +12,8 @@ import LadCore
 //       --code, every conversion inside source files typed in the Latin layout (ideally none).
 //   lad-eval sweep [same options]
 //       The headline numbers for a grid of detector thresholds.
+//   lad-eval pack [--resources DIR] --out DIR
+//       Packs each word list into DIR/<language>.lad, the form the app maps (make bundle).
 //   lad-eval explain [--resources DIR] [--fixture FILE] WORD...
 //       The scores behind the verdicts for words typed in the wrong and in the right layout.
 
@@ -25,6 +27,7 @@ struct Options {
     var top = 20_000
     /// Test words from these word lists instead of the ones the models load, to compare lists.
     var testWords: URL?
+    var out: URL?
     var codeDirectories: [URL] = []
     var words: [String] = []
 
@@ -41,6 +44,7 @@ struct Options {
             case "--fixture": fixture = URL(fileURLWithPath: value)
             case "--top": top = Int(value) ?? top
             case "--test-words": testWords = URL(fileURLWithPath: value)
+            case "--out": out = URL(fileURLWithPath: value)
             case "--code": codeDirectories.append(URL(fileURLWithPath: (value as NSString).expandingTildeInPath))
             default: throw EvalError(description: "unknown option \(argument)")
             }
@@ -248,6 +252,20 @@ func report(_ language: Language, _ result: WordResult) {
     print("  false conversions: \(result.falseConversions.isEmpty ? "none" : result.falseConversions.joined(separator: " "))")
 }
 
+func runPack(_ options: Options) throws {
+    guard let out = options.out else { throw EvalError(description: "pack needs --out DIR") }
+    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+    for language in Language.allCases {
+        let tsv = try String(contentsOf: options.resources.appending(path: "Dictionaries/\(language.rawValue).tsv"), encoding: .utf8)
+        let model = try LanguageModel(language: language, tsv: tsv)
+        let packed = model.packed()
+        // The app refuses a pack that does not read back.
+        _ = try LanguageModel(language: language, packed: packed)
+        try packed.write(to: out.appending(path: "\(language.rawValue).lad"), options: .atomic)
+        print("packed \(language.rawValue): \(model.wordCount) words, \(packed.count) bytes")
+    }
+}
+
 func runQuality(_ options: Options) throws {
     let start = Date()
     let corpus = try Corpus(options)
@@ -327,8 +345,9 @@ do {
     case "quality": try runQuality(try Options(arguments.dropFirst()))
     case "sweep": try runSweep(try Options(arguments.dropFirst()))
     case "explain": try runExplain(try Options(arguments.dropFirst()))
+    case "pack": try runPack(try Options(arguments.dropFirst()))
     default:
-        throw EvalError(description: "usage: lad-eval dump-layouts | quality | sweep | explain WORD... [--resources DIR] [--fixture FILE] [--top N] [--test-words DIR] [--code DIR]")
+        throw EvalError(description: "usage: lad-eval dump-layouts | quality | sweep | explain WORD... | pack --out DIR [--resources DIR] [--fixture FILE] [--top N] [--test-words DIR] [--code DIR]")
     }
 } catch {
     FileHandle.standardError.write(Data("lad-eval: \(error)\n".utf8))

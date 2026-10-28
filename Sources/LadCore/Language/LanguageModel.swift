@@ -6,6 +6,8 @@ public struct LanguageModel: Sendable {
         /// A line that is not `word<TAB>count` with a word of the language and a positive count.
         case malformedLine(Int)
         case empty
+        /// Bytes that are not a model packed by `packed()` for this language.
+        case malformedPack
     }
 
     public let language: Language
@@ -16,9 +18,10 @@ public struct LanguageModel: Sendable {
     /// Parses `word<TAB>count` lines; blank lines and `#` comments are skipped. The text is read in
     /// place, one line at a time, so loading leaves no copies of the list behind.
     public init(language: Language, tsv: String) throws(LoadError) {
-        var builder = WordTable.Builder()
-        var lineNumber = 0
         let text = tsv.utf8
+        var builder = WordTable.Builder()
+        builder.reserveCapacity(words: text.lazy.filter { $0 == UInt8(ascii: "\n") }.count + 1)
+        var lineNumber = 0
         var lineStart = text.startIndex
         while lineStart < text.endIndex {
             let lineEnd = text[lineStart...].firstIndex(of: UInt8(ascii: "\n")) ?? text.endIndex
@@ -47,11 +50,26 @@ public struct LanguageModel: Sendable {
         self.init(language: language, words: builder.build())
     }
 
-    private init(language: Language, words: WordTable) {
+    /// Reads a model written by `packed()`, usually mapped from a file: nothing is parsed or
+    /// trained, and the word table is used where it lies.
+    public init(language: Language, packed: Data) throws(LoadError) {
+        guard let words = WordTable(block: packed), words.count > 0,
+              let spelling = CharacterModel(language: language, block: packed.dropFirst(words.length)) else {
+            throw .malformedPack
+        }
+        self.init(language: language, words: words, spelling: spelling)
+    }
+
+    private init(language: Language, words: WordTable, spelling: CharacterModel? = nil) {
         self.language = language
         self.words = words
         self.logTotal = log(max(Double(words.total), 1))
-        self.spelling = CharacterModel(language: language, words: words)
+        self.spelling = spelling ?? CharacterModel(language: language, words: words)
+    }
+
+    /// The model as one block: the word table, then the character model.
+    public func packed() -> Data {
+        words.storage + spelling.packed()
     }
 
     public var wordCount: Int { words.count }
@@ -95,11 +113,10 @@ struct CharacterModel: Sendable {
     private let bigramContexts: [Double]
     private let unigramTotal: Double
 
+    private static let magic = UInt32(littleEndian: 0x4344_414C)
+
     init(language: Language, words: WordTable) {
-        var symbols: [Character: Int] = [WordText.apostrophe: 1]
-        for (offset, letter) in language.alphabet.enumerated() {
-            symbols[letter] = offset + 2
-        }
+        let symbols = Self.symbols(of: language)
         let size = language.alphabet.count + 2
         var trigrams = [Double](repeating: 0, count: size * size * size)
         var bigrams = [Double](repeating: 0, count: size * size)
@@ -130,6 +147,50 @@ struct CharacterModel: Sendable {
         self.trigramContexts = trigramContexts
         self.bigramContexts = bigramContexts
         self.unigramTotal = unigrams.reduce(0, +)
+    }
+
+    /// Reads the tables `packed()` wrote; nil when `block` does not start with them for `language`.
+    init?(language: Language, block: Data) {
+        let size = language.alphabet.count + 2
+        let lengths = [size * size * size, size * size, size, size * size, size, 1]
+        guard block.count >= 8 + lengths.reduce(0, +) * 8 else { return nil }
+        let header = block.withUnsafeBytes { ($0.littleEndian(UInt32.self, at: 0), Int($0.littleEndian(UInt32.self, at: 4))) }
+        guard header == (Self.magic, size) else { return nil }
+        var tables: [[Double]] = []
+        block.withUnsafeBytes { raw in
+            var offset = 8
+            for length in lengths {
+                tables.append((0..<length).map { Double(bitPattern: raw.littleEndian(UInt64.self, at: offset + $0 * 8)) })
+                offset += length * 8
+            }
+        }
+        self.symbols = Self.symbols(of: language)
+        self.size = size
+        self.trigrams = tables[0]
+        self.bigrams = tables[1]
+        self.unigrams = tables[2]
+        self.trigramContexts = tables[3]
+        self.bigramContexts = tables[4]
+        self.unigramTotal = tables[5][0]
+    }
+
+    /// "LADC", the symbol count (UInt32 each), then every table as little-endian doubles.
+    func packed() -> Data {
+        var block = Data()
+        block.appendLittleEndian(Self.magic)
+        block.appendLittleEndian(UInt32(size))
+        for table in [trigrams, bigrams, unigrams, trigramContexts, bigramContexts, [unigramTotal]] {
+            table.forEach { block.appendLittleEndian($0.bitPattern) }
+        }
+        return block
+    }
+
+    private static func symbols(of language: Language) -> [Character: Int] {
+        var symbols: [Character: Int] = [WordText.apostrophe: 1]
+        for (offset, letter) in language.alphabet.enumerated() {
+            symbols[letter] = offset + 2
+        }
+        return symbols
     }
 
     /// Natural log probability of the spelling; -infinity when it has characters outside the alphabet.

@@ -176,6 +176,7 @@ _swift_dynamicCastObjCClass
 _swift_dynamicCastUnknownClassUnconditional
 _swift_endAccess
 _swift_errorRelease
+_swift_getEnumTagSinglePayloadGeneric
 _swift_getForeignTypeMetadata
 _swift_getGenericMetadata
 _swift_getKeyPath
@@ -200,6 +201,7 @@ _swift_setDeallocating
 _swift_slowAlloc
 _swift_slowDealloc
 _swift_storeEnumTagMultiPayload
+_swift_storeEnumTagSinglePayloadGeneric
 _swift_task_alloc
 _swift_task_create
 _swift_task_dealloc

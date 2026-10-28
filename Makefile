@@ -195,7 +195,7 @@ bundle: bundle-check build
 	printf 'APPL????' > "$$app/Contents/PkgInfo"; \
 	cp "$$bin/$(NAME)" "$$app/Contents/MacOS/$(NAME)"; \
 	cp "$(RES)/AppIcon.icns" "$$app/Contents/Resources/AppIcon.icns"; \
-	cp "$(RES)/Dictionaries/uk.tsv" "$(RES)/Dictionaries/en.tsv" "$$app/Contents/Resources/Dictionaries/"; \
+	"$$bin/lad-eval" pack --resources "$(RES)" --out "$$app/Contents/Resources/Dictionaries"; \
 	cp "$(RES)/Licenses.txt" "$$app/Contents/Resources/Licenses.txt"; \
 	plutil -lint -s "$$app/Contents/Info.plist"; \
 	if [ '$(SIGN_ID)' = - ]; then \
