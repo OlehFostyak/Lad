@@ -9,44 +9,60 @@ public struct LanguageModel: Sendable {
     }
 
     public let language: Language
-    private let counts: [String: UInt32]
+    private let words: WordTable
     private let logTotal: Double
     private let spelling: CharacterModel
 
-    /// Parses `word<TAB>count` lines; blank lines and `#` comments are skipped.
+    /// Parses `word<TAB>count` lines; blank lines and `#` comments are skipped. The text is read in
+    /// place, one line at a time, so loading leaves no copies of the list behind.
     public init(language: Language, tsv: String) throws(LoadError) {
-        var counts: [String: UInt32] = [:]
-        for (index, line) in tsv.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+        var builder = WordTable.Builder()
+        var lineNumber = 0
+        let text = tsv.utf8
+        var lineStart = text.startIndex
+        while lineStart < text.endIndex {
+            let lineEnd = text[lineStart...].firstIndex(of: UInt8(ascii: "\n")) ?? text.endIndex
+            lineNumber += 1
+            let line = tsv[lineStart..<lineEnd]
+            lineStart = lineEnd == text.endIndex ? lineEnd : text.index(after: lineEnd)
             if line.isEmpty || line.hasPrefix("#") { continue }
-            let fields = line.split(separator: "\t", omittingEmptySubsequences: false)
-            guard fields.count == 2, let count = UInt32(fields[1]), count > 0 else {
-                throw .malformedLine(index + 1)
+            guard let tab = line.utf8.firstIndex(of: UInt8(ascii: "\t")), let count = UInt32(line[line.index(after: tab)...]),
+                  count > 0 else {
+                throw .malformedLine(lineNumber)
             }
-            let word = WordText.normalized(String(fields[0]))
-            guard WordText.isWord(word, in: language) else { throw .malformedLine(index + 1) }
-            counts[word] = (counts[word] ?? 0).addingReportingOverflow(count).overflow ? .max : (counts[word] ?? 0) + count
+            let word = WordText.normalized(String(line[..<tab]))
+            guard WordText.isWord(word, in: language) else { throw .malformedLine(lineNumber) }
+            builder.add(word, count: count)
         }
-        guard !counts.isEmpty else { throw .empty }
-        self.init(language: language, counts: counts)
+        let words = builder.build()
+        guard words.count > 0 else { throw .empty }
+        self.init(language: language, words: words)
     }
 
     public init(language: Language, counts: [String: UInt32]) {
-        self.language = language
-        self.counts = counts
-        let total = counts.values.reduce(0.0) { $0 + Double($1) }
-        self.logTotal = log(max(total, 1))
-        self.spelling = CharacterModel(language: language, counts: counts)
+        var builder = WordTable.Builder()
+        for (word, count) in counts {
+            builder.add(word, count: count)
+        }
+        self.init(language: language, words: builder.build())
     }
 
-    public var wordCount: Int { counts.count }
+    private init(language: Language, words: WordTable) {
+        self.language = language
+        self.words = words
+        self.logTotal = log(max(Double(words.total), 1))
+        self.spelling = CharacterModel(language: language, words: words)
+    }
+
+    public var wordCount: Int { words.count }
 
     public func contains(_ word: String) -> Bool {
-        counts[word] != nil
+        words.count(of: word) != nil
     }
 
     /// Natural log of the word's share of running text; nil when the word is not listed.
     public func logFrequency(of word: String) -> Double? {
-        counts[word].map { log(Double($0)) - logTotal }
+        words.count(of: word).map { log(Double($0)) - logTotal }
     }
 
     /// Natural log of the spelling's probability under the character model, end of word included.
@@ -79,7 +95,7 @@ struct CharacterModel: Sendable {
     private let bigramContexts: [Double]
     private let unigramTotal: Double
 
-    init(language: Language, counts: [String: UInt32]) {
+    init(language: Language, words: WordTable) {
         var symbols: [Character: Int] = [WordText.apostrophe: 1]
         for (offset, letter) in language.alphabet.enumerated() {
             symbols[letter] = offset + 2
@@ -88,8 +104,8 @@ struct CharacterModel: Sendable {
         var trigrams = [Double](repeating: 0, count: size * size * size)
         var bigrams = [Double](repeating: 0, count: size * size)
         var unigrams = [Double](repeating: 0, count: size)
-        for (word, count) in counts {
-            guard let path = Self.path(of: word, symbols: symbols) else { continue }
+        words.forEach { word, count in
+            guard let path = Self.path(of: word, symbols: symbols) else { return }
             let weight = log(1 + Double(count))
             for index in 2..<path.count {
                 let (a, b, c) = (path[index - 2], path[index - 1], path[index])

@@ -96,3 +96,70 @@ struct LanguageModelTests {
         #expect(!Language.english.isLetter("ß"))
     }
 }
+
+@Suite("Word table")
+struct WordTableTests {
+    private static func table(_ counts: [(String, UInt32)]) -> WordTable {
+        var builder = WordTable.Builder()
+        for (word, count) in counts {
+            builder.add(word, count: count)
+        }
+        return builder.build()
+    }
+
+    @Test("Looks words up and adds up repeated ones, saturating")
+    func looksUp() {
+        let table = Self.table([("привіт", 5), ("при", 2), ("hello", 1), ("привіт", 3), ("max", .max), ("max", 1)])
+        #expect(table.count == 4)
+        #expect(table.count(of: "привіт") == 8)
+        #expect(table.count(of: "при") == 2)
+        #expect(table.count(of: "hello") == 1)
+        #expect(table.count(of: "max") == .max)
+        #expect(table.count(of: "прив") == nil)
+        #expect(table.count(of: "привітання") == nil)
+        #expect(table.count(of: "") == nil)
+    }
+
+    @Test("Totals the words that start with a prefix")
+    func totalsPrefixes() {
+        let table = Self.table([("при", 2), ("привіт", 5), ("прийти", 3), ("про", 7), ("п'ять", 4), ("є", 1), ("їжа", 6)])
+        #expect(table.totals(startingWith: "при") == (3, 10))
+        #expect(table.totals(startingWith: "прив") == (1, 5))
+        #expect(table.totals(startingWith: "пр") == (4, 17))
+        #expect(table.totals(startingWith: "п") == (5, 21))
+        #expect(table.totals(startingWith: "п'") == (1, 4))
+        #expect(table.totals(startingWith: "привітання") == (0, 0))
+        #expect(table.totals(startingWith: "ґ") == (0, 0))
+        #expect(table.totals(startingWith: "ї") == (1, 6))
+        #expect(table.totals(startingWith: "") == (7, 28))
+        #expect(table.total == 28)
+    }
+
+    @Test("Visits every word once, in byte order")
+    func visitsWords() {
+        let table = Self.table([("b", 1), ("a", 2), ("ab", 3), ("a", 1)])
+        var visited: [String] = []
+        table.forEach { word, count in visited.append("\(word)=\(count)") }
+        #expect(visited == ["a=3", "ab=3", "b=1"])
+    }
+
+    @Test("The bundled lists answer like a dictionary of their lines")
+    func matchesLines() throws {
+        let directory = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "Resources/Dictionaries")
+        let tsv = try String(contentsOf: directory.appending(path: "uk.tsv"), encoding: .utf8)
+        var expected: [String: UInt32] = [:]
+        for line in tsv.split(separator: "\n") where !line.hasPrefix("#") {
+            let fields = line.split(separator: "\t")
+            expected[String(fields[0]), default: 0] += try #require(UInt32(fields[1]))
+        }
+        let model = try LanguageModel(language: .ukrainian, tsv: tsv)
+        #expect(model.wordCount == expected.count)
+        let total = expected.values.reduce(0.0) { $0 + Double($1) }
+        for (word, count) in expected.prefix(2_000) {
+            let frequency = try #require(model.logFrequency(of: word))
+            #expect(abs(frequency - log(Double(count) / total)) < 1e-9)
+        }
+    }
+}
