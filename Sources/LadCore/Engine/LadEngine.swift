@@ -20,6 +20,12 @@ public struct LadEngine: Sendable {
     /// Punctuation that may end a line right after a word that converts at Return, in the layout
     /// the word converts into.
     static let closingPunctuation: Set<Character> = [".", ",", "!", "?", ";", ":", ")", "…"]
+    /// Replies too short to convert anywhere else, but sent as a line of their own («ок⏎», «ok!⏎»)
+    /// they are what they look like. Code tokens (jq, lt) are never one.
+    static let shortReplies: [Language: Set<String>] = [
+        .ukrainian: ["ок", "ну", "хм", "ха", "ах", "ох", "ух", "ех", "мм", "ага", "угу"],
+        .english: ["ok", "hi", "no", "yo", "ya", "ha", "oh", "ah", "hm", "mm", "um"],
+    ]
     /// Words with fewer letters never get a missing apostrophe added.
     static let minApostropheLength = 3
     /// Ukrainian letters an apostrophe may stand before (м'яч, п'ю, сім'є, з'їсти).
@@ -264,7 +270,10 @@ extension LadEngine {
         }
         let lesson = takeLesson(for: word, layouts: layouts)
         let pending = pendingStrokes(in: history[...], layouts: layouts)
-        let (verdict, converted) = conversion(for: word, layouts: layouts)
+        var (verdict, converted) = conversion(for: word, layouts: layouts)
+        if verdict == .undecided, history.isEmpty, isShortReply(word, layouts: layouts) {
+            (verdict, converted) = (.convert, word)
+        }
         guard convertsOnReturn, verdict == .convert, let original = layouts.current.text(for: pending + word),
               let inserted = layouts.other.text(for: pending + converted) else {
             if convertsOnReturn, let fix = fixCase(word, boundary: nil, layouts: layouts)?.replacement {
@@ -284,7 +293,10 @@ extension LadEngine {
         guard let last = history.last, last.verdict == .undecided, last.layoutID == layouts.current.id,
               let punctuation = layouts.other.text(for: last.trailing),
               punctuation.allSatisfy(Self.closingPunctuation.contains) else { return .pass }
-        let (verdict, converted) = conversion(for: last.strokes, layouts: layouts)
+        var (verdict, converted) = conversion(for: last.strokes, layouts: layouts)
+        if verdict == .undecided, history.count == 1, isShortReply(last.strokes, layouts: layouts) {
+            (verdict, converted) = (.convert, last.strokes)
+        }
         let pending = pendingStrokes(in: history.dropLast(), layouts: layouts)
         guard verdict == .convert, let original = layouts.current.text(for: pending + last.allStrokes),
               let inserted = layouts.other.text(for: pending + converted + last.trailing) else {
@@ -315,6 +327,16 @@ extension LadEngine {
             }
         }
         return (verdict, strokes)
+    }
+
+    /// Whether the keys type one of the other language's short replies, and nothing Lad keeps.
+    private func isShortReply(_ strokes: [KeyStroke], layouts: LayoutPair) -> Bool {
+        guard isAutomatic, let typedLanguage = layouts.current.language, let otherLanguage = layouts.other.language,
+              let typed = layouts.current.text(for: strokes), let other = layouts.other.text(for: strokes),
+              let reply = WordText.core(of: other, in: otherLanguage), Self.shortReplies[otherLanguage]?.contains(reply) == true,
+              Detector.hasPlainCase(typed, in: typedLanguage) else { return false }
+        let normalized = WordText.normalized(typed)
+        return !exceptions.contains(normalized) && !(typedLanguage == .english && Detector.codeTokens.contains(normalized))
     }
 
     /// `converted`: the keys the word would convert into, when they differ from the typed ones.

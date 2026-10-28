@@ -426,3 +426,38 @@ struct ApostropheTests {
     }
 }
 
+@Suite("Short replies")
+struct ShortReplyTests {
+    private let us = Fixture.us
+    private let ua = Fixture.ua
+    private let returnKey = KeyStroke(keyCode: KeyCode.returnKey)
+
+    @Test("A short reply alone on its line converts at Return", arguments: ["ок", "ну", "Ок"])
+    func convertsAloneAtReturn(reply: String) {
+        var typist = Typist(Fixture.typingInUS)
+        typist.type(Fixture.retype(reply, from: ua, to: us), on: us)
+        #expect(typist.pressReturn().replacement == Replacement(deleteCount: 2, text: reply, layoutID: ua.id, followUpKey: returnKey))
+    }
+
+    @Test("With the line's punctuation, and in English too")
+    func convertsWithPunctuation() {
+        var typist = Typist(Fixture.typingInUS)
+        typist.type("jr!", on: us)
+        #expect(typist.pressReturn().replacement?.text == "ок!")
+        var english = Typist(Fixture.typingInUA)
+        english.type("щл", on: ua)
+        #expect(english.pressReturn().replacement?.text == "ok")
+    }
+
+    @Test("Not after other words, not at a space, and never a code token")
+    func staysOtherwise() {
+        var sentence = Typist(Fixture.typingInUS)
+        sentence.type("is jr", on: us)
+        #expect(sentence.pressReturn().replacement == nil)
+        var spaced = Typist(Fixture.typingInUS)
+        #expect(spaced.type("jr ", on: us).isEmpty)
+        var code = Typist(Fixture.typingInUS)
+        code.type("jq", on: us)
+        #expect(code.pressReturn().replacement == nil)
+    }
+}
