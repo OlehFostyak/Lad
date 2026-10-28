@@ -5,10 +5,11 @@ import LadCore
 //
 //   lad-eval dump-layouts
 //       JSON snapshots of the enabled keyboard layouts, the test fixture (make fixtures).
-//   lad-eval quality [--resources DIR] [--fixture FILE] [--top N] [--code DIR]...
+//   lad-eval quality [--resources DIR] [--fixture FILE] [--top N] [--test-words DIR] [--code DIR]...
 //       How often the top N words of each list convert when typed in the wrong layout and stay
-//       when typed in the right one, by length and weighted by frequency. With --code, every
-//       conversion inside source files typed in the Latin layout (ideally none).
+//       when typed in the right one, by length and weighted by frequency. --test-words takes the
+//       words from another Resources directory (to compare word lists on the same words). With
+//       --code, every conversion inside source files typed in the Latin layout (ideally none).
 //   lad-eval sweep [same options]
 //       The headline numbers for a grid of detector thresholds.
 //   lad-eval explain [--resources DIR] [--fixture FILE] WORD...
@@ -22,6 +23,8 @@ struct Options {
     var resources = URL(fileURLWithPath: "Resources")
     var fixture = URL(fileURLWithPath: "Tests/LadCoreTests/Fixtures/layouts.json")
     var top = 20_000
+    /// Test words from these word lists instead of the ones the models load, to compare lists.
+    var testWords: URL?
     var codeDirectories: [URL] = []
     var words: [String] = []
 
@@ -37,6 +40,7 @@ struct Options {
             case "--resources": resources = URL(fileURLWithPath: value)
             case "--fixture": fixture = URL(fileURLWithPath: value)
             case "--top": top = Int(value) ?? top
+            case "--test-words": testWords = URL(fileURLWithPath: value)
             case "--code": codeDirectories.append(URL(fileURLWithPath: (value as NSString).expandingTildeInPath))
             default: throw EvalError(description: "unknown option \(argument)")
             }
@@ -106,10 +110,11 @@ struct Corpus {
         var models: [LanguageModel] = []
         var words: [Language: [(word: String, count: UInt32)]] = [:]
         for language in Language.allCases {
-            let url = options.resources.appending(path: "Dictionaries/\(language.rawValue).tsv")
-            let tsv = try String(contentsOf: url, encoding: .utf8)
+            let path = "Dictionaries/\(language.rawValue).tsv"
+            let tsv = try String(contentsOf: options.resources.appending(path: path), encoding: .utf8)
             models.append(try LanguageModel(language: language, tsv: tsv))
-            words[language] = Self.topWords(tsv, limit: options.top)
+            let testTSV = try options.testWords.map { try String(contentsOf: $0.appending(path: path), encoding: .utf8) } ?? tsv
+            words[language] = Self.topWords(testTSV, limit: options.top)
         }
         self.latin = latin
         self.cyrillic = cyrillic
@@ -323,7 +328,7 @@ do {
     case "sweep": try runSweep(try Options(arguments.dropFirst()))
     case "explain": try runExplain(try Options(arguments.dropFirst()))
     default:
-        throw EvalError(description: "usage: lad-eval dump-layouts | quality | sweep | explain WORD... [--resources DIR] [--fixture FILE] [--top N] [--code DIR]")
+        throw EvalError(description: "usage: lad-eval dump-layouts | quality | sweep | explain WORD... [--resources DIR] [--fixture FILE] [--top N] [--test-words DIR] [--code DIR]")
     }
 } catch {
     FileHandle.standardError.write(Data("lad-eval: \(error)\n".utf8))
