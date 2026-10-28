@@ -5,9 +5,12 @@ Run with `make dictionaries` (python3 -I). Sources are downloaded once into tool
 
 - FrequencyWords 2018 (OpenSubtitles) by Hermit Dave: uk_full.txt and en_50k.txt.
   Code MIT, word lists CC-BY-SA-4.0.
-- VESUM (dict_uk by brown-uk) v6.8.6, GPL-3.0: dict_corp_vis.txt.bz2. Used only to keep the
-  Ukrainian subtitle words that are real Ukrainian word forms (the subtitle list carries many
-  Russian words) and to add the apostrophe forms the subtitle tokenizer split apart.
+- VESUM (dict_uk by brown-uk) v6.8.6, dictionary data CC-BY-NC-SA-4.0 (its code is GPL-3.0):
+  dict_corp_vis.txt.bz2. Used only to keep the Ukrainian subtitle words that are real Ukrainian
+  word forms (the subtitle list carries many Russian words) and to add the apostrophe forms the
+  subtitle tokenizer split apart.
+
+Resources/Licenses.txt credits both sources and says what changed; keep it in step.
 
 Output lines are `word<TAB>count`, most frequent first, after `#` header lines.
 """
@@ -191,11 +194,12 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     write(OUT / "uk.tsv", build_uk(), [
         "Ukrainian word forms with OpenSubtitles 2018 counts (FrequencyWords, CC-BY-SA-4.0),",
-        "filtered by VESUM / dict_uk v6.8.6 (brown-uk, GPL-3.0). Built by tools/build_dictionaries.py.",
+        "filtered by VESUM / dict_uk v6.8.6 (brown-uk, CC-BY-NC-SA-4.0), which adds its apostrophe forms.",
+        "Non-commercial use only. Built by tools/build_dictionaries.py; sources in Resources/Licenses.txt.",
     ])
     write(OUT / "en.tsv", build_en(), [
         "English words with OpenSubtitles 2018 counts (FrequencyWords, CC-BY-SA-4.0).",
-        "Built by tools/build_dictionaries.py.",
+        "Built by tools/build_dictionaries.py; sources in Resources/Licenses.txt.",
     ])
 
 

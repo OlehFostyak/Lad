@@ -1,0 +1,31 @@
+Lad: word list sources and licenses
+
+Lad's word lists, Contents/Resources/Dictionaries/en.tsv and uk.tsv, are built from the data
+below by tools/build_dictionaries.py. The data is provided as-is, without warranties, as the
+licenses below state. Lad uses and shares it non-commercially.
+
+
+FrequencyWords
+  By Hermit Dave, https://github.com/hermitdave/FrequencyWords (commit 525f9b5, 2018 lists).
+  Word counts from the OpenSubtitles 2018 corpus (OPUS, http://opus.nlpl.eu/OpenSubtitles2018.php;
+  subtitles from https://www.opensubtitles.org).
+  License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0),
+  https://creativecommons.org/licenses/by-sa/4.0/
+
+VESUM, Large Electronic Dictionary of Ukrainian (dict_uk)
+  Copyright (c) 2026 Andriy Rysin (arysin@gmail.com), Vasyl Starko, BrUK team.
+  https://vesum.nlp.net.ua/, https://github.com/brown-uk/dict_uk (release v6.8.6, dict_corp_vis.txt).
+  License of the dictionary data: Creative Commons Attribution-NonCommercial-ShareAlike 4.0
+  International (CC BY-NC-SA 4.0), https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+
+What Lad changed
+
+en.tsv, from FrequencyWords en_50k: lowercased; only words of the letters a-z, with one-, two-
+and three-letter tokens limited to real words and common abbreviations; 64 contractions added
+with the count of a common word. Shared under CC BY-SA 4.0.
+
+uk.tsv, from FrequencyWords uk_full and VESUM: lowercased, apostrophes unified; only subtitle
+words seen at least twice that VESUM lists as normative word forms; VESUM's word forms with an
+apostrophe added with a count of 2. It holds material from both sources and is shared on the
+terms of both licenses, non-commercially.

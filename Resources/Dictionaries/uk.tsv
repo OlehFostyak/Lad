@@ -1,5 +1,6 @@
 # Ukrainian word forms with OpenSubtitles 2018 counts (FrequencyWords, CC-BY-SA-4.0),
-# filtered by VESUM / dict_uk v6.8.6 (brown-uk, GPL-3.0). Built by tools/build_dictionaries.py.
+# filtered by VESUM / dict_uk v6.8.6 (brown-uk, CC-BY-NC-SA-4.0), which adds its apostrophe forms.
+# Non-commercial use only. Built by tools/build_dictionaries.py; sources in Resources/Licenses.txt.
 я	168773
 не	143925
 в	69533

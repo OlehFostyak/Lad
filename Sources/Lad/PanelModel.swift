@@ -128,6 +128,12 @@ final class PanelModel: ObservableObject {
         LoginItem.openSettings()
     }
 
+    /// The credits and licenses of the word lists, shipped in the bundle.
+    func openLicenses() {
+        guard let url = Bundle.main.url(forResource: "Licenses", withExtension: "txt") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     func quit() {
         NSApp.terminate(nil)
     }

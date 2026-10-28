@@ -136,7 +136,11 @@ struct PanelView: View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("За тиждень виправлено \(model.fixesThisWeek) · сьогодні \(model.fixesToday)").font(.caption)
-                Text("Lad \(model.version)").font(.caption2).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text("Lad \(model.version)").foregroundStyle(.secondary)
+                    Button("Ліцензії", action: model.openLicenses).buttonStyle(.link)
+                }
+                .font(.caption2)
                 Text("Без мережі. Набраний текст не зберігається, крім твоїх списків слів.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)

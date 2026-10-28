@@ -13,7 +13,8 @@ app, Swift 6, built with the Command Line Tools only — never propose installin
 - `make verify` (otool/nm checks of the built binary), `make symbols` (refresh `tools/allowed-symbols.txt`
   after using a new API; review the diff).
 - `make fixtures` re-captures the owner's layouts (Ukrainian-PC is a custom layout,
-  `org.unknown.keylayout.Українська-PC`); `make dictionaries` rebuilds Resources/Dictionaries.
+  `org.unknown.keylayout.Українська-PC`); `make dictionaries` rebuilds Resources/Dictionaries
+  (keep `Resources/Licenses.txt`, shipped in the bundle, in step with its sources).
 
 ## Layout
 
