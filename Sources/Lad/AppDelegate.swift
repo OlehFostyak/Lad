@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var model: PanelModel?
     private var statusItem: StatusItemController?
     private var permissionTimer: Timer?
+    private var updater: Updater?
     /// Keeps App Nap away: a napped process would answer its event tap late, and macOS would
     /// disable the tap.
     private var activity: NSObjectProtocol?
@@ -29,7 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         FocusObserver.limitAccessibilityTimeouts()
         let inputSources = InputSources()
         let controller = TypingController(settings: settings, inputSources: inputSources)
-        let model = PanelModel(controller: controller, settings: settings)
+        let updater = Updater(settings: settings)
+        let model = PanelModel(controller: controller, settings: settings, updater: updater)
         let statusItem = StatusItemController(controller: controller, settings: settings, model: model)
         controller.onStateChange = { [weak statusItem, weak model] in
             statusItem?.refresh()
@@ -42,6 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.controller = controller
         self.model = model
         self.statusItem = statusItem
+        self.updater = updater
+        updater.startDailyChecks()
         loadDictionaries(into: controller)
         let isFirstLaunch = !settings.didFirstLaunchSetup
         startTap(controller, prompting: !isFirstLaunch)

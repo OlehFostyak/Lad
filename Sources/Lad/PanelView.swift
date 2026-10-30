@@ -12,6 +12,7 @@ struct PanelView: View {
             PanelSection(title: "Розкладка") { layout }
             PanelSection(title: "Інше") { other }
             PanelSection(title: "Хоткеї") { hotkeys }
+            PanelSection(title: "Оновлення") { UpdatesView(model: model, updater: model.updater) }
             lists
             Divider()
             footer
@@ -145,7 +146,7 @@ struct PanelView: View {
                     Button("Ліцензії", action: model.openLicenses).buttonStyle(.link)
                 }
                 .font(.caption2)
-                Text("Без мережі. Набраний текст не зберігається, крім твоїх списків слів.")
+                Text("У мережу лише по оновлення. Набраний текст не зберігається, крім твоїх списків слів.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -199,6 +200,38 @@ private struct SwitchRow: View {
 }
 
 /// A titled group of rows.
+/// Automatic updates and a manual check, with the version and when Lad last looked.
+private struct UpdatesView: View {
+    @ObservedObject var model: PanelModel
+    @ObservedObject var updater: Updater
+
+    var body: some View {
+        SwitchRow(title: "Перевіряти й встановлювати оновлення автоматично", detail: nil, isOn: $model.updatesAutomatically)
+        HStack(spacing: 8) {
+            Button(updater.status == .checking ? "Перевіряю…" : "Перевірити зараз", action: updater.check)
+                .disabled(updater.status == .checking || updater.status == .installing)
+            Text(line)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+    }
+
+    private var line: String {
+        let version = "Версія \(Updater.currentVersion)"
+        switch updater.status {
+        case .installing: return version + " · встановлюю оновлення…"
+        case let .failed(reason): return version + " · " + reason
+        case .upToDate: return version + " · остання"
+        case .idle, .checking:
+            guard let lastCheck = updater.lastCheck else { return version }
+            let ago = RelativeDateTimeFormatter()
+            ago.locale = Locale(identifier: "uk")
+            return version + " · перевірено " + ago.localizedString(for: lastCheck, relativeTo: .now)
+        }
+    }
+}
+
 private struct PanelSection<Content: View>: View {
     let title: String
     @ViewBuilder let content: Content

@@ -13,7 +13,7 @@ app, Swift 6, built with the Command Line Tools only — never propose installin
   Accessibility grant survives rebuilds; the owner types that password, never ask for it.
 - `make release` (universal build, signed like an install: the owner types the password; zip, DMG and
   sums in dist/) and `make publish` (tools/publish.sh: tag, push, GitHub release, cask in
-  OlehFostyak/homebrew-tap). Lad never gets networking for updates: Homebrew and this script do it.
+  OlehFostyak/homebrew-tap). The cask says `auto_updates`: Lad updates itself (Updater.swift).
 - `make verify` (otool/nm checks of the built binary; the allow-list covers non-Swift symbols and
   Foundation's Swift API), `make symbols` (refresh `tools/allowed-symbols.txt`
   after using a new API; review the diff).
@@ -39,8 +39,10 @@ app, Swift 6, built with the Command Line Tools only — never propose installin
 
 ## Rules
 
-- Privacy is the point of this app: no networking APIs, no `print`, logging only through the fixed
-  `LogEvent`s in Log.swift. Persisted (Settings.swift only): switches, the two word lists the user
+- Privacy is the point of this app: networking and other processes only in `Updater.swift` (Lad's
+  latest release from api.github.com, its archive, ditto, the relaunch; the owner chose in-app
+  updates over Homebrew-only on 2026-10-30), and it never touches typed text; no `print`, logging
+  only through the fixed `LogEvent`s in Log.swift. Persisted (Settings.swift only): switches, the two word lists the user
   builds with double Shift (exceptions, learned words — the only typed text on disk, shown in the
   panel; learned words are listed or word-like and never from a terminal, a turned-back live switch
   only if word-like), bundle ID → layout ID per app, and per-day fix counts. Nothing under secure

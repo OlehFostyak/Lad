@@ -45,6 +45,7 @@ struct SourceScanTests {
             for line in file.text.split(separator: "\n") where line.hasPrefix("import ") || line.hasPrefix("@testable import ") {
                 let module = String(line.split(separator: " ").last ?? "")
                 let isAllowed = allowed.contains(module) || (module == "os" && file.name == "Log.swift")
+                    || (module == "Security" && file.name == "Updater.swift")
                 #expect(isAllowed, "\(file.path) imports \(module)")
             }
         }
@@ -59,8 +60,25 @@ struct SourceScanTests {
         "SecItem", "kAXValueAttribute",
     ])
     func noOutboundAPI(api: String) {
-        for file in Self.shipped {
+        for file in Self.shipped where !(file.name == "Updater.swift" && Self.updaterAPIs.contains(api)) {
             #expect(!file.text.contains(api), "\(file.path) uses \(api)")
+        }
+    }
+
+    /// The updater (checking GitHub for a release, unpacking it with ditto, relaunching) is the one
+    /// place Lad touches the network or another process. Nothing typed is in reach there.
+    private static let updaterAPIs: Set<String> = ["URLSession", "URLRequest", "Process(", "://"]
+
+    @Test("The updater reaches only Lad's releases on GitHub")
+    func updaterTalksOnlyToGitHub() throws {
+        let updater = try #require(Self.shipped.first { $0.name == "Updater.swift" })
+        let urls = updater.text.components(separatedBy: "\"").filter { $0.contains("://") }
+        #expect(!urls.isEmpty)
+        for url in urls {
+            #expect(url.hasPrefix("https://api.github.com/repos/OlehFostyak/Lad/"), "Updater.swift reaches \(url)")
+        }
+        for api in ["Logger(", "print(", "UserDefaults", "kAXSelectedTextAttribute", "LadEngine", "TypingController"] {
+            #expect(!updater.text.contains(api), "Updater.swift uses \(api)")
         }
     }
 
@@ -89,7 +107,7 @@ struct SourceScanTests {
             ("suiteName:", ["Settings.swift"]),
             ("contentsOf", ["DictionaryLoader.swift"]),
             ("NSPasteboard", ["SelectionTransformer.swift"]),
-            ("FileManager", []),
+            ("FileManager", ["Updater.swift"]),
             (".write(", []),
             ("createFile", []),
             ("NSWorkspace.shared.open", ["Permissions.swift", "PanelModel.swift"]),

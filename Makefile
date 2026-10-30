@@ -259,9 +259,9 @@ verify:
 	    *) echo "error: links $$library, outside the allow-list" >&2; exit 1;; \
 	  esac; \
 	done; \
-	forbidden="$$(nm -u "$$binary" | grep -E '^_(socket|connect|getaddrinfo|nw_|posix_spawn|execv|execve|dlopen|CFSocket|CFReadStreamCreateForHTTPRequest)|NSURLSession|NSURLConnection' || true)"; \
+	forbidden="$$(nm -u "$$binary" | grep -E '^_(socket|connect|getaddrinfo|nw_|posix_spawn|execv|execve|dlopen|CFSocket|CFReadStreamCreateForHTTPRequest)|NSURLConnection' || true)"; \
 	if [ -n "$$forbidden" ]; then echo "error: the binary imports $$forbidden" >&2; exit 1; fi; \
-	echo "  ok: only system frameworks; no network or process-spawning symbols"; \
+	echo "  ok: only system frameworks; no sockets or process-spawning symbols (URLSession: the allow-list)"; \
 	allowed="$$(mktemp)"; \
 	grep -v '^#' "$(SYMBOL_ALLOWLIST)" | LC_ALL=C sort -u > "$$allowed"; \
 	unexpected="$$(nm -u "$$binary" | $(IMPORTS_CHECKED) | LC_ALL=C sort -u | LC_ALL=C comm -23 - "$$allowed")"; \

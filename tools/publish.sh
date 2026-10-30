@@ -1,8 +1,8 @@
 #!/bin/bash
 # Publishes a release that `make release` packed (make publish): tags v<version>, pushes the branch
 # and the tag, creates the GitHub release with the zip, the DMG and docs/releases/v<version>.md as
-# notes, then points the cask in the Homebrew tap at the new zip. Lad itself never touches the
-# network; only this script and Homebrew do.
+# notes, then points the cask in the Homebrew tap at the new zip. Installed copies find the release
+# themselves (Updater.swift), so the cask says auto_updates.
 set -euo pipefail
 
 version="$1"
@@ -56,9 +56,10 @@ cask "lad" do
 
   url "https://github.com/$repo/releases/download/v#{version}/Lad-#{version}.zip"
   name "Lad"
-  desc "Keyboard layout switcher for Ukrainian and English that never uses the network"
+  desc "Keyboard layout switcher for Ukrainian and English that keeps what you type local"
   homepage "https://github.com/$repo"
 
+  auto_updates true
   depends_on macos: ">= :tahoe"
 
   app "Lad.app"

@@ -21,6 +21,8 @@ final class Settings {
         static let automatic = "automaticSwitching"
         static let convertsOnReturn = "convertsOnReturn"
         static let convertsWhileTyping = "convertsWhileTyping"
+        static let updatesAutomatically = "updatesAutomatically"
+        static let lastUpdateCheck = "lastUpdateCheck"
         static let fixesTwoCapitals = "fixesTwoCapitals"
         static let remembersAppLayouts = "remembersAppLayouts"
         static let showsLayoutHint = "showsLayoutHint"
@@ -44,7 +46,7 @@ final class Settings {
         self.defaults = defaults
         defaults.register(defaults: [
             Key.automatic: true, Key.convertsOnReturn: true, Key.fixesTwoCapitals: true, Key.remembersAppLayouts: true,
-            Key.showsLayoutHint: true,
+            Key.showsLayoutHint: true, Key.updatesAutomatically: true,
             Key.iconStyle: IconStyle.keyboard.rawValue,
         ])
         defaults.removeObject(forKey: Key.removedExcludedApps)
@@ -58,6 +60,17 @@ final class Settings {
     var convertsOnReturn: Bool {
         get { defaults.bool(forKey: Key.convertsOnReturn) }
         set { defaults.set(newValue, forKey: Key.convertsOnReturn) }
+    }
+
+    /// Check GitHub for a newer Lad once a day and install it.
+    var updatesAutomatically: Bool {
+        get { defaults.bool(forKey: Key.updatesAutomatically) }
+        set { defaults.set(newValue, forKey: Key.updatesAutomatically) }
+    }
+
+    var lastUpdateCheck: Date? {
+        get { defaults.object(forKey: Key.lastUpdateCheck) as? Date }
+        set { defaults.set(newValue, forKey: Key.lastUpdateCheck) }
     }
 
     /// Off by default (unregistered): live switching is the bolder mode.

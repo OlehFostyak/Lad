@@ -46,6 +46,9 @@ final class PanelModel: ObservableObject {
     @Published var showsLayoutHint = true {
         didSet { apply { controller.setShowsLayoutHint(showsLayoutHint) } }
     }
+    @Published var updatesAutomatically = true {
+        didSet { apply { settings.updatesAutomatically = updatesAutomatically } }
+    }
     @Published var playsSound = false {
         didSet { apply { settings.playsSound = playsSound } }
     }
@@ -62,9 +65,12 @@ final class PanelModel: ObservableObject {
     private let settings: Settings
     private var isRefreshing = false
 
-    init(controller: TypingController, settings: Settings) {
+    let updater: Updater
+
+    init(controller: TypingController, settings: Settings, updater: Updater) {
         self.controller = controller
         self.settings = settings
+        self.updater = updater
         refresh()
     }
 
@@ -76,6 +82,7 @@ final class PanelModel: ObservableObject {
         isRefreshing = true
         defer { isRefreshing = false }
         health = Self.health(of: controller)
+        updatesAutomatically = settings.updatesAutomatically
         isAutomatic = controller.isAutomatic
         convertsOnReturn = controller.convertsOnReturn
         convertsWhileTyping = controller.convertsWhileTyping

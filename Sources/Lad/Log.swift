@@ -12,6 +12,9 @@ enum LogEvent {
     case anotherInstanceRunning
     /// Enough unstamped key presses came: keys stamped with another process ID are now left alone.
     case foreignKeyFilterReady
+    case updateFound
+    case updateInstalled
+    case updateFailed
 }
 
 enum Log {
@@ -26,6 +29,9 @@ enum Log {
         case .loginItemFailed: logger.error("login item change failed")
         case .anotherInstanceRunning: logger.notice("another Lad is running; quitting")
         case .foreignKeyFilterReady: logger.notice("keys posted by other programs are now ignored")
+        case .updateFound: logger.notice("a newer release was found; installing")
+        case .updateInstalled: logger.notice("update installed; relaunching")
+        case .updateFailed: logger.error("update check or install failed")
         }
     }
 }
